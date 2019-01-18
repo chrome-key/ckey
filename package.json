@@ -1,0 +1,51 @@
+{
+    "name": "ckey",
+    "version": "0.0.1",
+    "description": "A Chrome Extension that emulates a Hardware Authentication Device",
+    "author": "Joao Peixoto <joaomppeixoto@gmail.com>",
+    "private": true,
+    "devDependencies": {
+        "@types/jest": "^24.0.9",
+        "@types/node": "^10.12.18",
+        "babel-core": "^6.26.0",
+        "babel-loader": "^7.1.2",
+        "babel-polyfill": "^6.26.0",
+        "babel-preset-env": "^1.6.1",
+        "edit-json-file": "^1.2.1",
+        "jest": "^24.1.0",
+        "mocha": "^6.0.2",
+        "ts-jest": "^24.0.0",
+        "ts-loader": "^4.3.1",
+        "tslint": "^5.11.0",
+        "tslint-loader": "^3.6.0",
+        "typescript": "^3.2.4",
+        "webpack": "^4.8.3",
+        "webpack-cli": "^3.2.3",
+        "webpack-merge": "^4.1.2",
+        "zip-folder": "^1.0.0"
+    },
+    "dependencies": {
+        "@types/chrome": "^0.0.77",
+        "@types/jquery": "^3.3.29",
+        "@types/loglevel": "^1.5.3",
+        "@types/webappsec-credential-management": "^0.3.7",
+        "cbor": "^4.1.4",
+        "jquery": "^3.3.1",
+        "loglevel": "^1.6.1",
+        "loglevel-plugin-prefix": "^0.8.4",
+        "strip-sourcemap-loader": "^0.0.1",
+        "web-ext-types": "^3.1.0"
+    },
+    "scripts": {
+        "watch": "webpack --config webpack.dev.js --display-error-details",
+        "build": "webpack --config webpack.prod.js",
+        "test": "jest",
+        "test:watch": "jest --watch",
+        "preversion": "npm run test",
+        "version": "node scripts/manifest.js && npm run build && node scripts/release.js && git add -A dist",
+        "postversion": "git push && git push --tags",
+        "prerelease": "npm run build",
+        "postrelease": "node scripts/manifest.js",
+        "release": "node scripts/release.js"
+    }
+}

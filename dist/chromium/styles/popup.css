@@ -1,0 +1,51 @@
+#wrapper {
+	font-family: Lato;
+	font-size: 1.5rem;
+	text-align: center;
+	box-sizing: border-box;
+	color: #333;
+	width: 300px;
+	margin: 0;
+  }
+  #wrapper #dialog {
+	border: solid 1px #ccc;
+	background-color: #faf8f8;
+	overflow: hidden;
+	position: relative;
+	max-width: 450px;
+  }
+  #wrapper #dialog h3 {
+	margin: 0 0 10px;
+	padding: 0;
+	line-height: 1.25;
+  }
+  #wrapper #dialog span {
+	font-size: 90%;
+  }
+  #wrapper #dialog #form {
+	max-width: 240px;
+	margin: 25px auto;
+  }
+  #wrapper #dialog #form input {
+	text-align: center;
+	line-height: 80px;
+	font-size: 50px;
+	border: solid 1px #ccc;
+	box-shadow: 0 0 5px #ccc inset;
+	outline: none;
+	width: 20%;
+	transition: all 0.2s ease-in-out;
+	border-radius: 3px;
+  }
+  #wrapper #dialog #form input:focus {
+	border-color: rgb(8, 89, 155);
+	box-shadow: 0 0 5px rgb(8, 89, 155) inset;
+  }
+  #wrapper #dialog #form input::selection {
+	background: transparent;
+  }
+  #wrapper #dialog div {
+	position: relative;
+	z-index: 1;
+  }
+  

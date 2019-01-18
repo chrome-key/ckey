@@ -1,0 +1,10 @@
+node_modules/
+*.log
+.DS_Store
+ckey-v*.zip
+dist/chromium/js/background.js
+dist/chromium/js/inject_webauthn.js
+dist/chromium/js/babel_polyfill.js
+dist/chromium/js/content_script.js
+dist/chromium/js/popup.js
+dist/chromium/js/popup_orig.js
