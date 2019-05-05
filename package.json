@@ -1,6 +1,6 @@
 {
     "name": "ckey",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "A Chrome Extension that emulates a Hardware Authentication Device",
     "author": "Joao Peixoto <joaomppeixoto@gmail.com>",
     "private": true,
