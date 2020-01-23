@@ -50,6 +50,7 @@ export const generateRegistrationKeyAndAttestation = async (
     await saveKey(keyID, compatibleKey.privateKey, pin);
 
     return {
+        getClientExtensionResults: () => ({}),
         id: keyID,
         rawId: base64ToByteArray(keyID),
         response: {
@@ -57,7 +58,7 @@ export const generateRegistrationKeyAndAttestation = async (
             clientDataJSON: base64ToByteArray(window.btoa(clientData)),
         },
         type: 'public-key',
-    };
+    } as PublicKeyCredential;
 };
 
 export const generateKeyRequestAndAttestation = async (
@@ -102,5 +103,5 @@ export const generateKeyRequestAndAttestation = async (
             userHandle: new ArrayBuffer(0), // This should be nullable
         },
         type: 'public-key',
-    };
+    } as Credential;
 };
