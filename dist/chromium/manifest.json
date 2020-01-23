@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "CKey",
   "description": "A Chrome Extension that emulates a Hardware Authentication Device",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minimum_chrome_version": "36.0.1985.18",
   "content_scripts": [
     {
