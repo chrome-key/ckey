@@ -1,5 +1,5 @@
 import * as CBOR from 'cbor';
-import { getCompatibleKey, getCompatibleKeyFromCryptoKey } from './crypto';
+import {CKEY_ID, getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
 import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
@@ -20,7 +20,9 @@ export const generateRegistrationKeyAndAttestation = async (
     const rpID = rp.id || getDomainFromOrigin(origin);
     const user = publicKeyCreationOptions.user;
     const userID = byteArrayToBase64(new Uint8Array(user.id as ArrayBuffer));
-    const keyID = window.btoa(`${userID}@${rpID}`);
+    log.info('userId', userID);
+    log.info('rpId', rpID);
+    const keyID = byteArrayToBase64(CKEY_ID, true);
 
     // First check if there is already a key for this rp ID
     if (await keyExists(keyID)) {
@@ -30,20 +32,17 @@ export const generateRegistrationKeyAndAttestation = async (
     const compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
 
     // TODO Increase key counter
+    // ToDo Use correct credential Id in authenticator & authenticator data
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0);
     const clientData = await compatibleKey.generateClientData(
         publicKeyCreationOptions.challenge as ArrayBuffer,
         { origin, type: 'webauthn.create' },
     );
-    const signature = await compatibleKey.sign(clientData);
 
     const attestationObject = CBOR.encodeCanonical({
-        attStmt: {
-            alg: compatibleKey.algorithm,
-            sig: signature,
-        },
+        attStmt: new Map(),
         authData: authenticatorData,
-        fmt: 'packed',
+        fmt: 'none',
     }).buffer;
 
     // Now that we have built all we need, let's save the key
@@ -52,7 +51,7 @@ export const generateRegistrationKeyAndAttestation = async (
     return {
         getClientExtensionResults: () => ({}),
         id: keyID,
-        rawId: base64ToByteArray(keyID),
+        rawId: base64ToByteArray(keyID, true),
         response: {
             attestationObject,
             clientDataJSON: base64ToByteArray(window.btoa(clientData)),
@@ -61,6 +60,7 @@ export const generateRegistrationKeyAndAttestation = async (
     } as PublicKeyCredential;
 };
 
+// Assertion
 export const generateKeyRequestAndAttestation = async (
     origin: string,
     publicKeyRequestOptions: PublicKeyCredentialRequestOptions,
@@ -70,11 +70,17 @@ export const generateKeyRequestAndAttestation = async (
         log.debug('No keys requested');
         return null;
     }
+    log.info('origin', origin);
+    origin = 'http://localhost:9005';
     // For now we will only worry about the first entry
     const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
     const keyIDArray: ArrayBuffer = requestedCredential.id as ArrayBuffer;
-    const keyID = byteArrayToBase64(new Uint8Array(keyIDArray));
+    const keyID = byteArrayToBase64(new Uint8Array(keyIDArray), true);
+    log.info("Hier")
+    log.info(`keyID`, keyID)
     const key = await fetchKey(keyID, pin);
+    log.info('key', key)
+    log.info("nicht")
 
     if (!key) {
         throw new Error(`key with id ${keyID} not found`);
@@ -87,19 +93,29 @@ export const generateKeyRequestAndAttestation = async (
             tokenBinding: {
                 status: 'not-supported',
             },
-            type: 'webauthn.create',
+            type: 'webauthn.get',
         },
     );
-    const signature = await compatibleKey.sign(clientData);
+    const clientDataJSON = base64ToByteArray(window.btoa(clientData));
+    const clientDataHash = new Uint8Array(await window.crypto.subtle.digest('SHA-256', clientDataJSON));
+
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0);
+
+    const concatData = new Uint8Array(authenticatorData.length + clientDataHash.length);
+    concatData.set(authenticatorData);
+    concatData.set(clientDataHash, authenticatorData.length);
+    log.info('concatData', concatData);
+
+    const signature = await compatibleKey.sign(concatData);
+    log.info('signature', signature);
     return {
         id: keyID,
         rawId: keyIDArray,
         response: {
             authenticatorData: authenticatorData.buffer,
-            clientDataJSON: base64ToByteArray(window.btoa(clientData)),
-            signature,
+            clientDataJSON: clientDataJSON,
+            signature: (new Uint8Array(signature)).buffer,
             userHandle: new ArrayBuffer(0), // This should be nullable
         },
         type: 'public-key',

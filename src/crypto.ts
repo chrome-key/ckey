@@ -1,13 +1,14 @@
 import * as CBOR from 'cbor';
 import { getLogger } from './logging';
 import { base64ToByteArray, byteArrayToBase64 } from './utils';
+import {Signature} from 'elliptic'
 
 const log = getLogger('crypto');
 
 // Generated with pseudo random values via
 // https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues
 export const CKEY_ID = new Uint8Array([
-    194547236, 76082241, 3628762690, 4137210381,
+    194547238, 76082241, 3628762690, 4137210381,
     1214244733, 1205845608, 840015201, 3897052717,
     4072880437, 4027233456, 675224361, 2305433287,
     74291263, 3461796691, 701523034, 3178201666,
@@ -34,9 +35,9 @@ const coseEllipticCurveNames: { [s: number]: string } = {
 };
 
 const ellipticNamedCurvesToCOSE: { [s: string]: number } = {
-    'P-256': -7,
-    'P-384': -35,
-    'P-512': -36,
+    'P-256': -7, // Just Support P-256
+    //'P-384': -35,
+    //'P-512': -36,
 };
 
 interface ICOSECompatibleKey {
@@ -45,7 +46,7 @@ interface ICOSECompatibleKey {
     publicKey?: CryptoKey;
     generateClientData(challenge: ArrayBuffer, extraOptions: any): Promise<string>;
     generateAuthenticatorData(rpID: string, counter: number): Promise<Uint8Array>;
-    sign(clientData: string): Promise<any>;
+    sign(clientData: Uint8Array): Promise<ArrayBuffer>;
 }
 
 class ECDSA implements ICOSECompatibleKey {
@@ -139,8 +140,8 @@ class ECDSA implements ICOSECompatibleKey {
         if (this.publicKey) {
             // attestation flag goes on the 7th bit (from the right)
             authenticatorData[rpIdHash.length] |= (1 << 6);
-            offset++;
         }
+        offset++;
 
         // 4 bytes for the counter. big-endian uint32
         // https://www.w3.org/TR/webauthn/#signature-counter
@@ -169,15 +170,56 @@ class ECDSA implements ICOSECompatibleKey {
         return authenticatorData;
     }
 
-    public async sign(data: string): Promise<any> {
+    // ToDo Fix signing
+    public async sign(data: Uint8Array): Promise<ArrayBuffer> {
         if (!this.privateKey) {
             throw new Error('no private key available for signing');
         }
-        return window.crypto.subtle.sign(
+        const tmpsig = await window.crypto.subtle.sign(
             this.getKeyParams(),
             this.privateKey,
-            new TextEncoder().encode(data),
-        );
+            data,
+        )
+
+        const rawSig = new Buffer(tmpsig)
+
+        // Converting to DER encoding
+       /* const r = rawSig.slice(0, 32);
+        const s = rawSig.slice(32);
+        log.info("R and S");
+
+        var Signature = require("elliptic").signature;
+        log.info("Import");
+        const sig =  new Signature({r: new Uint8Array(r), s: new Uint8Array(s)});
+        log.info("Signature");
+
+        const res = sig.toDER()
+        log.info("Converted");
+
+        return res;*/
+
+        const asn1 = require('asn1.js');
+        const BN = require('bn.js');
+        const crypto = require('crypto');
+
+        const EcdsaDerSig = asn1.define('ECPrivateKey', function() {
+            return this.seq().obj(
+                this.key('r').int(),
+                this.key('s').int()
+            );
+        });
+
+        function asn1SigSigToConcatSig(asn1SigBuffer) {
+            const rsSig = EcdsaDerSig.decode(asn1SigBuffer, 'der');
+            return Buffer.concat([
+                rsSig.r.toArrayLike(Buffer, 'be', 32),
+                rsSig.s.toArrayLike(Buffer, 'be', 32)
+            ]);
+        }
+
+        const r = new BN(rawSig.slice(0, 32).toString('hex'), 16, 'be');
+        const s = new BN(rawSig.slice(32).toString('hex'), 16, 'be');
+        return EcdsaDerSig.encode({r, s}, 'der');
     }
 
     private getKeyParams(): EcdsaParams {

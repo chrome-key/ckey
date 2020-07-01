@@ -1,5 +1,6 @@
 import { ivLength, keyExportFormat, saltLength } from './constants';
 import { base64ToByteArray, byteArrayToBase64, concatenate } from './utils';
+import {getLogger} from "./logging";
 
 export const keyExists = (key: string): Promise<boolean> => {
     return new Promise<boolean>(async (res, rej) => {
@@ -110,14 +111,24 @@ const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey>
     );
 };
 
+const log = getLogger('webauthn');
+
 export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => {
+    log.info("A")
     return new Promise<CryptoKey>(async (res, rej) => {
+        log.info("B")
         chrome.storage.sync.get(key, async (resp) => {
+            log.info("C")
+            log.info(key)
             if (!!chrome.runtime.lastError) {
+                log.info("D")
                 rej(chrome.runtime.lastError);
                 return;
             }
+            log.info("E")
+            log.info(resp.key)
             const payload = base64ToByteArray(resp[key]);
+            log.info("F")
             const saltByteLength = payload[0];
             const ivByteLength = payload[1];
             const keyAlgorithmByteLength = payload[2];
@@ -177,10 +188,14 @@ export const saveKey = (key: string, privateKey: CryptoKey, pin: string): Promis
             iv,
             keyAlgorithm,
             wrappedKey);
+        log.info(payload)
+        log.info(key)
         chrome.storage.sync.set({ [key]: byteArrayToBase64(payload) }, () => {
             if (!!chrome.runtime.lastError) {
+                log.info("Key not stored")
                 rej(chrome.runtime.lastError);
             } else {
+                log.info("Key stored")
                 res();
             }
         });
