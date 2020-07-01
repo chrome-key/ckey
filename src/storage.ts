@@ -116,19 +116,14 @@ const log = getLogger('webauthn');
 export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => {
     log.info("A")
     return new Promise<CryptoKey>(async (res, rej) => {
-        log.info("B")
         chrome.storage.sync.get(key, async (resp) => {
-            log.info("C")
             log.info(key)
             if (!!chrome.runtime.lastError) {
-                log.info("D")
                 rej(chrome.runtime.lastError);
                 return;
             }
-            log.info("E")
             log.info(resp.key)
             const payload = base64ToByteArray(resp[key]);
-            log.info("F")
             const saltByteLength = payload[0];
             const ivByteLength = payload[1];
             const keyAlgorithmByteLength = payload[2];

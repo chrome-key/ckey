@@ -1,19 +1,18 @@
 import * as CBOR from 'cbor';
 import { getLogger } from './logging';
 import { base64ToByteArray, byteArrayToBase64 } from './utils';
-import {Signature} from 'elliptic'
 
 const log = getLogger('crypto');
 
-// Generated with pseudo random values via
-// https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues
-export const CKEY_ID = new Uint8Array([
-    194547238, 76082241, 3628762690, 4137210381,
-    1214244733, 1205845608, 840015201, 3897052717,
-    4072880437, 4027233456, 675224361, 2305433287,
-    74291263, 3461796691, 701523034, 3178201666,
-    3992003567, 1410532, 4234129691, 1438515639,
-]);
+export function createCredentialId(): Uint8Array{
+    let dt = new Date().getTime();
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = (dt + Math.random()*16)%16 | 0;
+        dt = Math.floor(dt/16);
+        return (c=='x' ? r :(r&0x3|0x8)).toString(16);
+    });
+    return base64ToByteArray(uuid, true);
+}
 
 // Copied from krypton
 function counterToBytes(c: number): Uint8Array {
@@ -30,14 +29,10 @@ function counterToBytes(c: number): Uint8Array {
 
 const coseEllipticCurveNames: { [s: number]: string } = {
     1: 'SHA-256',
-    2: 'SHA-384',
-    3: 'SHA-512',
 };
 
 const ellipticNamedCurvesToCOSE: { [s: string]: number } = {
-    'P-256': -7, // Just Support P-256
-    //'P-384': -35,
-    //'P-512': -36,
+    'P-256': -7,
 };
 
 interface ICOSECompatibleKey {
@@ -45,7 +40,7 @@ interface ICOSECompatibleKey {
     privateKey: CryptoKey;
     publicKey?: CryptoKey;
     generateClientData(challenge: ArrayBuffer, extraOptions: any): Promise<string>;
-    generateAuthenticatorData(rpID: string, counter: number): Promise<Uint8Array>;
+    generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array): Promise<Uint8Array>;
     sign(clientData: Uint8Array): Promise<ArrayBuffer>;
 }
 
@@ -81,8 +76,6 @@ class ECDSA implements ICOSECompatibleKey {
      */
     private static ellipticCurveKeys: { [s: number]: number } = {
         [-7]: 1,
-        [-35]: 2,
-        [-36]: 3,
     };
 
     constructor(
@@ -103,7 +96,7 @@ class ECDSA implements ICOSECompatibleKey {
         });
     }
 
-    public async generateAuthenticatorData(rpID: string, counter: number): Promise<Uint8Array> {
+    public async generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array): Promise<Uint8Array> {
         const rpIdDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpID));
         const rpIdHash = new Uint8Array(rpIdDigest);
 
@@ -114,16 +107,16 @@ class ECDSA implements ICOSECompatibleKey {
 
         let authenticatorDataLength = rpIdHash.length + 1 + 4;
         if (this.publicKey) {
-            aaguid = CKEY_ID.slice(0, 16);
+            aaguid = credentialId.slice(0, 16);
             // 16-bit unsigned big-endian integer.
             credIdLen = new Uint8Array(2);
-            credIdLen[0] = (CKEY_ID.length >> 8) & 0xff;
-            credIdLen[1] = CKEY_ID.length & 0xff;
+            credIdLen[0] = (credentialId.length >> 8) & 0xff;
+            credIdLen[1] = credentialId.length & 0xff;
             const coseKey = await this.toCOSE(this.publicKey);
             encodedKey = new Uint8Array(CBOR.encode(coseKey));
             authenticatorDataLength += aaguid.length
                 + credIdLen.byteLength
-                + CKEY_ID.length
+                + credentialId.length
                 + encodedKey.byteLength;
         }
 
@@ -161,8 +154,8 @@ class ECDSA implements ICOSECompatibleKey {
         offset += credIdLen.byteLength;
 
         // Variable length authenticator key ID
-        authenticatorData.set(CKEY_ID, offset);
-        offset += CKEY_ID.length;
+        authenticatorData.set(credentialId, offset);
+        offset += credentialId.length;
 
         // Variable length public key
         authenticatorData.set(encodedKey, offset);
@@ -170,37 +163,21 @@ class ECDSA implements ICOSECompatibleKey {
         return authenticatorData;
     }
 
-    // ToDo Fix signing
     public async sign(data: Uint8Array): Promise<ArrayBuffer> {
         if (!this.privateKey) {
             throw new Error('no private key available for signing');
         }
-        const tmpsig = await window.crypto.subtle.sign(
+        const tmpSign = await window.crypto.subtle.sign(
             this.getKeyParams(),
             this.privateKey,
             data,
         )
 
-        const rawSig = new Buffer(tmpsig)
+        const rawSig = new Buffer(tmpSign)
 
-        // Converting to DER encoding
-       /* const r = rawSig.slice(0, 32);
-        const s = rawSig.slice(32);
-        log.info("R and S");
-
-        var Signature = require("elliptic").signature;
-        log.info("Import");
-        const sig =  new Signature({r: new Uint8Array(r), s: new Uint8Array(s)});
-        log.info("Signature");
-
-        const res = sig.toDER()
-        log.info("Converted");
-
-        return res;*/
-
+        // Credit to: https://stackoverflow.com/a/39651457/5333936
         const asn1 = require('asn1.js');
         const BN = require('bn.js');
-        const crypto = require('crypto');
 
         const EcdsaDerSig = asn1.define('ECPrivateKey', function() {
             return this.seq().obj(
@@ -208,14 +185,6 @@ class ECDSA implements ICOSECompatibleKey {
                 this.key('s').int()
             );
         });
-
-        function asn1SigSigToConcatSig(asn1SigBuffer) {
-            const rsSig = EcdsaDerSig.decode(asn1SigBuffer, 'der');
-            return Buffer.concat([
-                rsSig.r.toArrayLike(Buffer, 'be', 32),
-                rsSig.s.toArrayLike(Buffer, 'be', 32)
-            ]);
-        }
 
         const r = new BN(rawSig.slice(0, 32).toString('hex'), 16, 'be');
         const s = new BN(rawSig.slice(32).toString('hex'), 16, 'be');
@@ -245,8 +214,6 @@ class ECDSA implements ICOSECompatibleKey {
 const defaultPKParams = { alg: -7, type: 'public-key' };
 const coseAlgorithmToKeyName = {
     [-7]: 'ECDSA',
-    [-35]: 'ECDSA',
-    [-36]: 'ECDSA',
 };
 
 export const getCompatibleKey = (pkParams: PublicKeyCredentialParameters[]): Promise<ICOSECompatibleKey> => {
