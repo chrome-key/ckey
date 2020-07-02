@@ -37,7 +37,7 @@ const ellipticNamedCurvesToCOSE: { [s: string]: number } = {
 
 interface ICOSECompatibleKey {
     algorithm: number;
-    privateKey: CryptoKey;
+    privateKey?: CryptoKey;
     publicKey?: CryptoKey;
     generateClientData(challenge: ArrayBuffer, extraOptions: any): Promise<string>;
     generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array): Promise<Uint8Array>;

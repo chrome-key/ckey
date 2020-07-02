@@ -114,7 +114,6 @@ const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey>
 const log = getLogger('webauthn');
 
 export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => {
-    log.info("A")
     return new Promise<CryptoKey>(async (res, rej) => {
         chrome.storage.sync.get(key, async (resp) => {
             log.info(key)
@@ -183,8 +182,7 @@ export const saveKey = (key: string, privateKey: CryptoKey, pin: string): Promis
             iv,
             keyAlgorithm,
             wrappedKey);
-        log.info(payload)
-        log.info(key)
+
         chrome.storage.sync.set({ [key]: byteArrayToBase64(payload) }, () => {
             if (!!chrome.runtime.lastError) {
                 log.info("Key not stored")

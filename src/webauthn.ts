@@ -3,6 +3,7 @@ import {createCredentialId, getCompatibleKey, getCompatibleKeyFromCryptoKey} fro
 import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
+import {loadBackupKeys, popBackupKey, syncBackupKeys} from "./recovery";
 
 const log = getLogger('webauthn');
 
@@ -11,9 +12,8 @@ export const generateRegistrationKeyAndAttestation = async (
     publicKeyCreationOptions: PublicKeyCredentialCreationOptions,
     pin: string,
 ): Promise<PublicKeyCredential> => {
-    if (publicKeyCreationOptions.attestation === 'direct') {
-        log.warn('We are being requested to create a key with "direct" attestation');
-        log.warn(`We can only perform self-attestation, therefore we will not be provisioning any keys`);
+    if (publicKeyCreationOptions.attestation !== 'none') {
+        log.warn('We can perform only none attestation');
         return null;
     }
     const rp = publicKeyCreationOptions.rp;
@@ -29,10 +29,14 @@ export const generateRegistrationKeyAndAttestation = async (
         throw new Error(`key with id ${encCredId} already exists`);
     }
 
+    await syncBackupKeys();
+    let key = await popBackupKey();
+    log.info(key);
+    return;
+
     const compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
 
     // TODO Increase key counter
-    // ToDo Use correct credential Id in authenticator & authenticator data
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credentialId);
     const clientData = await compatibleKey.generateClientData(
         publicKeyCreationOptions.challenge as ArrayBuffer,
