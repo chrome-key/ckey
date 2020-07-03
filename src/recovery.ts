@@ -1,8 +1,10 @@
+import * as CBOR from 'cbor';
 import {getLogger} from "./logging";
-import {base64ToByteArray} from "./utils";
-import {keyExportFormat} from "./constants";
+import {getCompatibleKeyFromCryptoKey} from "./crypto";
 
 const log = getLogger('recovery');
+
+export const PSK: string = "psk"
 
 export async function syncBackupKeys () {
     const bckpKeys = await loadBackupKeys();
@@ -118,4 +120,12 @@ export async function popBackupKey(identifier: string = "backup"): Promise<Backu
     let key = bckpKeys.pop();
     await storeBackupKeys(identifier, bckpKeys)
     return key;
+}
+
+export async function pskOutput(backupKey: BackupKey): Promise<Uint8Array> {
+    let compatibleKey = await getCompatibleKeyFromCryptoKey(backupKey.key);
+    let coseKey = await new Uint8Array(CBOR.encode(compatibleKey.toCOSE(backupKey.key)));
+
+    let extOutput = new Map([[PSK, coseKey]]);
+    return new Uint8Array(CBOR.encode(extOutput));
 }

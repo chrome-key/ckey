@@ -40,8 +40,9 @@ interface ICOSECompatibleKey {
     privateKey?: CryptoKey;
     publicKey?: CryptoKey;
     generateClientData(challenge: ArrayBuffer, extraOptions: any): Promise<string>;
-    generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array): Promise<Uint8Array>;
+    generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array, extensionOutput: Uint8Array): Promise<Uint8Array>;
     sign(clientData: Uint8Array): Promise<ArrayBuffer>;
+    toCOSE(key: CryptoKey): Promise<Map<number, any>>;
 }
 
 class ECDSA implements ICOSECompatibleKey {
@@ -96,7 +97,7 @@ class ECDSA implements ICOSECompatibleKey {
         });
     }
 
-    public async generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array): Promise<Uint8Array> {
+    public async generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array, extensionOutput: Uint8Array = null): Promise<Uint8Array> {
         const rpIdDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpID));
         const rpIdHash = new Uint8Array(rpIdDigest);
 
@@ -120,6 +121,10 @@ class ECDSA implements ICOSECompatibleKey {
                 + encodedKey.byteLength;
         }
 
+        if (extensionOutput != null) {
+            authenticatorDataLength += extensionOutput.byteLength;
+        }
+
         const authenticatorData = new Uint8Array(authenticatorDataLength);
         let offset = 0;
 
@@ -128,11 +133,13 @@ class ECDSA implements ICOSECompatibleKey {
         offset += rpIdHash.length;
 
         // 1 byte for flags
-        // user-presence flag goes on the right-most bit
-        authenticatorData[rpIdHash.length] = 1;
+        authenticatorData[rpIdHash.length] = 1; // User presence (Bit 0)
         if (this.publicKey) {
             // attestation flag goes on the 7th bit (from the right)
-            authenticatorData[rpIdHash.length] |= (1 << 6);
+            authenticatorData[rpIdHash.length] |= (1 << 6); // Attestation present (Bit 6)
+        }
+        if (extensionOutput != null) {
+            authenticatorData[rpIdHash.length] |= (1 << 7); // Extension present (Bit 7)
         }
         offset++;
 
@@ -144,6 +151,8 @@ class ECDSA implements ICOSECompatibleKey {
         if (!this.publicKey) {
             return authenticatorData;
         }
+
+        // attestedCredentialData
 
         // 16 bytes for the Authenticator Attestation GUID
         authenticatorData.set(aaguid, offset);
@@ -159,6 +168,13 @@ class ECDSA implements ICOSECompatibleKey {
 
         // Variable length public key
         authenticatorData.set(encodedKey, offset);
+        offset += encodedKey.byteLength;
+
+        // Variable length for extension
+        // ToDo Handle extension for assertion
+        if (extensionOutput != null) {
+            authenticatorData.set(extensionOutput, offset);
+        }
 
         return authenticatorData;
     }
@@ -195,7 +211,7 @@ class ECDSA implements ICOSECompatibleKey {
         return { name: 'ECDSA', hash: coseEllipticCurveNames[ECDSA.ellipticCurveKeys[this.algorithm]] };
     }
 
-    private async toCOSE(key: CryptoKey): Promise<Map<number, any>> {
+    public async toCOSE(key: CryptoKey): Promise<Map<number, any>> {
         // In JWK the X and Y portions are Base64URL encoded (https://tools.ietf.org/html/rfc7517#section-3),
         // which is just the right type for COSE encoding (https://tools.ietf.org/html/rfc8152#section-7),
         // we just need to convert it to a byte array.
