@@ -18,10 +18,11 @@ export const generateRegistrationKeyAndAttestation = async (
     }
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
-    const user = publicKeyCreationOptions.user;
-    const userID = byteArrayToBase64(new Uint8Array(user.id as ArrayBuffer));
 
-    const credentialId = createCredentialId();
+    let bckpKey = await popBackupKey();
+    log.info('Used backup key', bckpKey);
+
+    const credentialId = base64ToByteArray(bckpKey.id, true);;
     const encCredId = byteArrayToBase64(credentialId, true);
 
     // First check if there is already a key for this rp ID
@@ -29,12 +30,9 @@ export const generateRegistrationKeyAndAttestation = async (
         throw new Error(`key with id ${encCredId} already exists`);
     }
 
-    await syncBackupKeys();
-    let key = await popBackupKey();
-    log.info(key);
-    return;
+    // await syncBackupKeys();
 
-    const compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
+    let compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
 
     // TODO Increase key counter
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credentialId);
