@@ -24,16 +24,17 @@ export async function loadBackupKeys(): Promise<Array<BackupKey>> {
     return new Promise<Array<BackupKey>>(function (resolve, reject) {
         let xhr = new XMLHttpRequest();
         xhr.open("GET", chrome.extension.getURL('/recovery/backup.json'), true);
-        xhr.onload = function () {
+        xhr.onload = async function () {
             let status = xhr.status;
             if (status == 200) {
                 let jwk = JSON.parse(this.response);
                 let i;
                 let bckpKeys = new Array<BackupKey>()
                 for (i = 0; i < jwk.length; ++i) {
-                    bckpKeys.push(new BackupKey(jwk[i], jwk[i].kid));
+                    let parsedKey = await parseKey(jwk[i]);
+                    bckpKeys.push(new BackupKey(parsedKey, jwk[i].kid));
                 }
-                resolve(bckpKeys);
+                await resolve(bckpKeys);
             } else {
                 reject(status);
             }
@@ -55,9 +56,28 @@ async function parseKey(jwk): Promise<CryptoKey> {
     );
 }
 
+class ExportKey {
+    key: JsonWebKey;
+    id: string;
+    constructor(key: JsonWebKey, id: string) {
+        this.key = key;
+        this.id = id;
+    }
+}
+
+
+
 async function storeBackupKeys(identifier: string, backupKeys: Array<BackupKey>): Promise<void> {
-    log.info("Storing backup keys")
-    let bckpJSON = await JSON.stringify(backupKeys);
+    let exportKeys = new Array<ExportKey>();
+    let i;
+    for (i = 0; i < backupKeys.length; ++i) {
+        let parsedKey = await window.crypto.subtle.exportKey("jwk", backupKeys[i].key);
+        exportKeys.push(new ExportKey(parsedKey, backupKeys[i].id));
+    }
+    let bckpJSON = JSON.stringify(exportKeys);
+    log.info("Storing backup keys", bckpJSON);
+
+    // ToDo Export key on storage and stringify, import on load
     return new Promise<void>(async (res, rej) => {
         chrome.storage.sync.set({ [identifier]: bckpJSON }, () => {
             if (!!chrome.runtime.lastError) {
@@ -79,7 +99,14 @@ async function fetchBackupKeys(identifier: string): Promise<Array<BackupKey>> {
                     rej(chrome.runtime.lastError);
                     return;
                 }
-                let bckpKeys = await JSON.parse(resp[identifier]);
+
+                let exportedKey = await JSON.parse(resp[identifier]);
+                let bckpKeys = new Array<BackupKey>();
+                let i;
+                for (i = 0; i < exportedKey.length; ++i) {
+                    let parsedKey = await parseKey(exportedKey[i].key);
+                    bckpKeys.push(new BackupKey(parsedKey, exportedKey[i].id));
+                }
                 log.info(bckpKeys);
                 res(bckpKeys);
             });
