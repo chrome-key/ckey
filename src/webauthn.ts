@@ -85,12 +85,12 @@ export const generateKeyRequestAndAssertion = async (
     // For now we will only worry about the first entry
     const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
     const credentialId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
-    const endCredId = byteArrayToBase64(new Uint8Array(credentialId), true);
+    const encCredId = byteArrayToBase64(new Uint8Array(credentialId), true);
 
-    const key = await fetchKey(endCredId, pin);
+    const key = await fetchKey(encCredId, pin);
 
     if (!key) {
-        throw new Error(`key with id ${endCredId} not found`);
+        throw new Error(`key with id ${encCredId} not found`);
     }
     const compatibleKey = await getCompatibleKeyFromCryptoKey(key);
     const clientData = await compatibleKey.generateClientData(
@@ -116,7 +116,7 @@ export const generateKeyRequestAndAssertion = async (
     const signature = await compatibleKey.sign(concatData);
     log.info('signature', signature);
     return {
-        id: endCredId,
+        id: encCredId,
         rawId: credentialId,
         response: {
             authenticatorData: authenticatorData.buffer,

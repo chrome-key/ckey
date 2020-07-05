@@ -79,7 +79,6 @@ async function storeBackupKeys(identifier: string, backupKeys: Array<BackupKey>)
     let bckpJSON = JSON.stringify(exportKeys);
     log.info("Storing backup keys", bckpJSON);
 
-    // ToDo Export key on storage and stringify, import on load
     return new Promise<void>(async (res, rej) => {
         chrome.storage.sync.set({ [identifier]: bckpJSON }, () => {
             if (!!chrome.runtime.lastError) {
