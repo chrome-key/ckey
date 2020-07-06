@@ -5,20 +5,37 @@ import {getCompatibleKeyFromCryptoKey} from "./crypto";
 const log = getLogger('recovery');
 
 export const PSK: string = "psk"
+const BACKUP: string = "backup"
+const RECOVERY: string = "recovery"
 
 export async function syncBackupKeys () {
     const bckpKeys = await loadBackupKeys();
     log.info("Loaded backup keys", bckpKeys);
-    await storeBackupKeys("backup", bckpKeys)
+    await storePSKKeys(BACKUP, bckpKeys)
 }
 
-export class BackupKey {
+class PSKKey {
     key: CryptoKey;
     id: string;
     constructor(key: CryptoKey, id: string) {
         this.key = key;
         this.id = id;
     }
+}
+
+class ExportKey {
+    key: JsonWebKey;
+    id: string;
+    constructor(key: JsonWebKey, id: string) {
+        this.key = key;
+        this.id = id;
+    }
+}
+
+export class BackupKey extends PSKKey {
+}
+
+export class RecoveryKey extends PSKKey {
 }
 
 export async function loadBackupKeys(): Promise<Array<BackupKey>> {
@@ -33,7 +50,7 @@ export async function loadBackupKeys(): Promise<Array<BackupKey>> {
                 let i;
                 let bckpKeys = new Array<BackupKey>()
                 for (i = 0; i < jwk.length; ++i) {
-                    let parsedKey = await parseKey(jwk[i]);
+                    let parsedKey = await parseJWK(jwk[i]);
                     bckpKeys.push(new BackupKey(parsedKey, jwk[i].kid));
                 }
                 await resolve(bckpKeys);
@@ -45,7 +62,7 @@ export async function loadBackupKeys(): Promise<Array<BackupKey>> {
     });
 }
 
-async function parseKey(jwk): Promise<CryptoKey> {
+async function parseJWK(jwk): Promise<CryptoKey> {
     return window.crypto.subtle.importKey(
         "jwk",
         jwk,
@@ -58,70 +75,65 @@ async function parseKey(jwk): Promise<CryptoKey> {
     );
 }
 
-class ExportKey {
-    key: JsonWebKey;
-    id: string;
-    constructor(key: JsonWebKey, id: string) {
-        this.key = key;
-        this.id = id;
-    }
-}
 
 
-
-async function storeBackupKeys(identifier: string, backupKeys: Array<BackupKey>): Promise<void> {
+async function storePSKKeys(identifier: string, psk: Array<PSKKey>): Promise<void> {
     let exportKeys = new Array<ExportKey>();
     let i;
-    for (i = 0; i < backupKeys.length; ++i) {
-        let parsedKey = await window.crypto.subtle.exportKey("jwk", backupKeys[i].key);
-        exportKeys.push(new ExportKey(parsedKey, backupKeys[i].id));
+    for (i = 0; i < psk.length; ++i) {
+        let parsedKey = await window.crypto.subtle.exportKey("jwk", psk[i].key);
+        exportKeys.push(new ExportKey(parsedKey, psk[i].id));
     }
-    let bckpJSON = JSON.stringify(exportKeys);
-    log.info("Storing backup keys", bckpJSON);
+    let pskJSON = JSON.stringify(exportKeys);
+    log.info("Storing psk keys", pskJSON);
 
     return new Promise<void>(async (res, rej) => {
-        chrome.storage.sync.set({ [identifier]: bckpJSON }, () => {
+        chrome.storage.sync.set({ [identifier]: pskJSON }, () => {
             if (!!chrome.runtime.lastError) {
-                log.info("Backup keys not stored")
+                log.info("PSK keys not stored")
                 rej(chrome.runtime.lastError);
             } else {
-                log.info("Backup keys stored")
+                log.info("PSK keys stored")
                 res();
             }
         });
     });
 }
 
-async function fetchBackupKeys(identifier: string): Promise<Array<BackupKey>> {
-        return new Promise<Array<BackupKey>>(async (res, rej) => {
+async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
+        return new Promise<Array<PSKKey>>(async (res, rej) => {
             chrome.storage.sync.get(identifier, async (resp) => {
                 if (!!chrome.runtime.lastError) {
-                    log.info("Could not fetch backup keys");
+                    log.info("Could not fetch PSK keys");
                     rej(chrome.runtime.lastError);
                     return;
                 }
 
                 let exportedKey = await JSON.parse(resp[identifier]);
-                let bckpKeys = new Array<BackupKey>();
+                let pskKeys = new Array<PSKKey>();
                 let i;
                 for (i = 0; i < exportedKey.length; ++i) {
-                    let parsedKey = await parseKey(exportedKey[i].key);
-                    bckpKeys.push(new BackupKey(parsedKey, exportedKey[i].id));
+                    let parsedKey = await parseJWK(exportedKey[i].key);
+                    pskKeys.push(new PSKKey(parsedKey, exportedKey[i].id));
                 }
-                log.info(bckpKeys);
-                res(bckpKeys);
+                log.info(pskKeys);
+                res(pskKeys);
             });
         });
 }
 
-export async function popBackupKey(identifier: string = "backup"): Promise<BackupKey> {
-    let bckpKeys = await fetchBackupKeys(identifier);
-    let key = bckpKeys.pop();
-    await storeBackupKeys(identifier, bckpKeys)
+async function popPSKKey(identifier: string): Promise<PSKKey> {
+    let pskKeys = await fetchPSKKeys(identifier);
+    let key = pskKeys.pop();
+    await storePSKKeys(identifier, pskKeys)
     return key;
 }
 
-export async function pskOutput(backupKey: BackupKey): Promise<Uint8Array> {
+export async function popBackupKey(): Promise<BackupKey> {
+    return popPSKKey(BACKUP);
+}
+
+export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
     let compatibleKey = await getCompatibleKeyFromCryptoKey(backupKey.key);
     let coseKey = await new Uint8Array(CBOR.encode(compatibleKey.toCOSE(backupKey.key)));
 

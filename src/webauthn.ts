@@ -3,7 +3,7 @@ import {createCredentialId, getCompatibleKey, getCompatibleKeyFromCryptoKey} fro
 import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
-import {loadBackupKeys, popBackupKey, pskOutput, syncBackupKeys} from "./recovery";
+import {popBackupKey, pskSetupExtensionOutput, syncBackupKeys} from "./recovery";
 
 const log = getLogger('webauthn');
 
@@ -22,17 +22,17 @@ export const generateRegistrationKeyAndAttestation = async (
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
 
-    // await syncBackupKeys();
+    // await syncBackupKeys(); // ToDo Add own method to trigger sync
 
     let bckpKey = await popBackupKey();
     log.info('Used backup key', bckpKey);
 
-    const pskExt = await pskOutput(bckpKey);
+    const pskExt = await pskSetupExtensionOutput(bckpKey);
 
     const credentialId = base64ToByteArray(bckpKey.id, true);
     const encCredId = byteArrayToBase64(credentialId, true);
 
-    // First check if there is already a key for this rp ID
+    // Check if there is already a key for this rp ID
     if (await keyExists(encCredId)) {
         throw new Error(`key with id ${encCredId} already exists`);
     }

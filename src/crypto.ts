@@ -11,7 +11,7 @@ export function createCredentialId(): Uint8Array{
         dt = Math.floor(dt/16);
         return (c=='x' ? r :(r&0x3|0x8)).toString(16);
     });
-    return base64ToByteArray(uuid, true);
+    return base64ToByteArray(window.btoa(uuid), true);
 }
 
 // Copied from krypton
