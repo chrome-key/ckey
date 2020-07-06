@@ -1,6 +1,7 @@
 import * as CBOR from 'cbor';
 import {getLogger} from "./logging";
 import {getCompatibleKeyFromCryptoKey} from "./crypto";
+import {base64ToByteArray, byteArrayToBase64} from "./utils";
 
 const log = getLogger('recovery');
 
@@ -36,6 +37,9 @@ export class BackupKey extends PSKKey {
 }
 
 export class RecoveryKey extends PSKKey {
+    constructor(key: CryptoKey) {
+        super(key, createId());
+    }
 }
 
 export async function loadBackupKeys(): Promise<Array<BackupKey>> {
@@ -139,4 +143,47 @@ export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uin
 
     let extOutput = new Map([[PSK, coseKey]]);
     return new Uint8Array(CBOR.encode(extOutput));
+}
+
+export async function createRecoveryKeys(n: number) {
+    let rcvKeys = new Array<RecoveryKey>();
+    let jwk = new Array<JsonWebKey>();
+    let i;
+    for (i = 0; i < n; ++i) {
+        let keyPair = await window.crypto.subtle.generateKey(
+            { name: 'ECDSA', namedCurve: "P-256" },
+            true,
+            ['sign'],
+        );
+        let expKey =  await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+
+        rcvKeys.push(new RecoveryKey(keyPair.privateKey));
+        jwk.push(expKey);
+    }
+
+    await storePSKKeys(RECOVERY, rcvKeys);
+
+    // Download keys as file
+    let json = [JSON.stringify(jwk)];
+    let blob1 = new Blob(json, { type: "text/plain;charset=utf-8" });
+    let link = (window.URL ? URL : webkitURL).createObjectURL(blob1);
+    let a = document.createElement("a");
+    a.download = "recoveryKeys.json";
+    a.href = link;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    log.debug("Downloading recovery keys completed");
+
+}
+
+function createId(): string{
+    let enc =  new TextEncoder();
+    let dt = new Date().getTime();
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = (dt + Math.random()*16)%16 | 0;
+        dt = Math.floor(dt/16);
+        return (c=='x' ? r :(r&0x3|0x8)).toString(16);
+    });
+    return byteArrayToBase64(enc.encode(uuid), true);
 }

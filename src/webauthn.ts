@@ -1,9 +1,9 @@
 import * as CBOR from 'cbor';
-import {createCredentialId, getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
+import {getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
 import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
-import {popBackupKey, pskSetupExtensionOutput, syncBackupKeys} from "./recovery";
+import {createRecoveryKeys, popBackupKey, pskSetupExtensionOutput, syncBackupKeys} from "./recovery";
 
 const log = getLogger('webauthn');
 
@@ -23,6 +23,7 @@ export const generateRegistrationKeyAndAttestation = async (
     const rpID = rp.id || getDomainFromOrigin(origin);
 
     // await syncBackupKeys(); // ToDo Add own method to trigger sync
+    await createRecoveryKeys(5);
 
     let bckpKey = await popBackupKey();
     log.info('Used backup key', bckpKey);
