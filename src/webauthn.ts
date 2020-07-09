@@ -3,7 +3,7 @@ import {getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
 import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
-import {createRecoveryKeys, popBackupKey, pskSetupExtensionOutput, syncBackupKeys} from "./recovery";
+import {createRecoveryKeys, popBackupKey, pskSetupExtensionOutput, syncBackupKeys, syncDelegation} from "./recovery";
 
 const log = getLogger('webauthn');
 
@@ -24,6 +24,7 @@ export const generateRegistrationKeyAndAttestation = async (
 
     // await syncBackupKeys(); // ToDo Add own method to trigger sync
     // await createRecoveryKeys(5);
+    await syncDelegation();
 
     let bckpKey = await popBackupKey();
     log.info('Used backup key', bckpKey);

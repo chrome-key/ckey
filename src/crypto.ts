@@ -25,7 +25,7 @@ const ellipticNamedCurvesToCOSE: { [s: string]: number } = {
     'P-256': -7,
 };
 
-interface ICOSECompatibleKey {
+export interface ICOSECompatibleKey {
     algorithm: number;
     privateKey?: CryptoKey;
     publicKey?: CryptoKey;
