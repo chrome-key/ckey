@@ -23,7 +23,7 @@ export const generateRegistrationKeyAndAttestation = async (
     const rpID = rp.id || getDomainFromOrigin(origin);
 
     // await syncBackupKeys(); // ToDo Add own method to trigger sync
-    await createRecoveryKeys(5);
+    // await createRecoveryKeys(5);
 
     let bckpKey = await popBackupKey();
     log.info('Used backup key', bckpKey);

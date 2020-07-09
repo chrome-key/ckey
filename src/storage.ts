@@ -13,73 +13,7 @@ export const keyExists = (key: string): Promise<boolean> => {
         });
     });
 };
-// function hack() {
-//     const keyID = 'V2E2TGQ1RnFqdEJNUVFncG0rUFBxS0UvVTBzcklnTTRVeHhOQWVZU0ZaZz1Ad2ViYXV0aG4ubWU=';
-//     chrome.storage.sync.get(keyID, async (resp) => {
-//         const raw = resp[keyID];
-//         console.log('breaking', raw);
-//         console.time();
-//         const enc = new TextEncoder();
-//         const payload = Uint8Array.from(atob(raw), (c) => c.charCodeAt(0));
-//         const saltByteLength = payload[0];
-//         const ivByteLength = payload[1];
-//         const keyAlgorithmByteLength = payload[2];
-//         let offset = 3;
-//         const salt = payload.subarray(offset, offset + saltByteLength);
-//         offset += saltByteLength;
-//         const iv = payload.subarray(offset, offset + ivByteLength);
-//         offset += ivByteLength;
-//         const keyAlgorithmBytes = payload.subarray(offset, offset + keyAlgorithmByteLength);
-//         offset += keyAlgorithmByteLength;
-//         const keyBytes = payload.subarray(offset);
-//         for (let i = 0; i < 10000; i++) {
-//             const pbkdf2Params = {
-//                 hash: 'SHA-256',
-//                 iterations: 100000,
-//                 name: 'PBKDF2',
-//                 salt,
-//             };
-//             const derivationKey = await window.crypto.subtle.importKey(
-//                 'raw',
-//                 enc.encode('' + i),
-//                 { name: 'PBKDF2', length: 256 },
-//                 false,
-//                 ['deriveBits', 'deriveKey'],
-//             );
-//             const wrappingKey = await window.crypto.subtle.deriveKey(
-//                 pbkdf2Params,
-//                 derivationKey,
-//                 { name: 'AES-GCM', length: 256 },
-//                 true,
-//                 ['wrapKey', 'unwrapKey'],
-//             );
-//             const wrapAlgorithm = {
-//                 iv,
-//                 name: 'AES-GCM',
-//             };
-//             const unwrappingKeyAlgorithm = JSON.parse(new TextDecoder().decode(keyAlgorithmBytes));
-//             try {
-//                 const realPrivateKey = await window.crypto.subtle.unwrapKey(
-//                     'pkcs8',
-//                     keyBytes,
-//                     wrappingKey,
-//                     wrapAlgorithm,
-//                     unwrappingKeyAlgorithm,
-//                     true,
-//                     ['sign'],
-//                 );
-//                 console.log('Success', realPrivateKey, 'in');
-//                 console.timeEnd();
-//                 return;
-//             } catch (e) {
-//                 if (i % 100 === 0) {
-//                     console.log('Testing', i, 'Running for');
-//                     console.timeLog();
-//                 }
-//             }
-//         }
-//     });
-// }
+
 export const deleteKey = (key: string) => {
     return new Promise(async (res, _) => {
         chrome.storage.sync.remove(key);
@@ -111,17 +45,16 @@ const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey>
     );
 };
 
-const log = getLogger('webauthn');
+const log = getLogger('storage');
 
 export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => {
+    log.debug('Fetching key for', key);
     return new Promise<CryptoKey>(async (res, rej) => {
         chrome.storage.sync.get(key, async (resp) => {
-            log.info(key)
             if (!!chrome.runtime.lastError) {
                 rej(chrome.runtime.lastError);
                 return;
             }
-            log.info(resp.key)
             const payload = base64ToByteArray(resp[key]);
             const saltByteLength = payload[0];
             const ivByteLength = payload[1];

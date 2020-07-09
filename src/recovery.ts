@@ -1,7 +1,7 @@
 import * as CBOR from 'cbor';
 import {getLogger} from "./logging";
 import {getCompatibleKeyFromCryptoKey} from "./crypto";
-import {base64ToByteArray, byteArrayToBase64} from "./utils";
+import { byteArrayToBase64 } from "./utils";
 
 const log = getLogger('recovery');
 
@@ -36,14 +36,14 @@ class ExportKey {
 export class BackupKey extends PSKKey {
 }
 
-export class RecoveryKey extends PSKKey {
+export class ReplacementKey extends PSKKey {
     constructor(key: CryptoKey) {
         super(key, createId());
     }
 }
 
-export async function loadBackupKeys(): Promise<Array<BackupKey>> {
-    log.info("Loading backup keys form JSON file")
+async function loadBackupKeys(): Promise<Array<BackupKey>> {
+    log.info("Loading backup keys from JSON file");
     return new Promise<Array<BackupKey>>(function (resolve, reject) {
         let xhr = new XMLHttpRequest();
         xhr.open("GET", chrome.extension.getURL('/recovery/backup.json'), true);
@@ -89,15 +89,15 @@ async function storePSKKeys(identifier: string, psk: Array<PSKKey>): Promise<voi
         exportKeys.push(new ExportKey(parsedKey, psk[i].id));
     }
     let pskJSON = JSON.stringify(exportKeys);
-    log.info("Storing psk keys", pskJSON);
+
+    log.debug(`Storing ${identifier} keys`, pskJSON);
 
     return new Promise<void>(async (res, rej) => {
         chrome.storage.sync.set({ [identifier]: pskJSON }, () => {
             if (!!chrome.runtime.lastError) {
-                log.info("PSK keys not stored")
+                log.warn(`Could not store ${identifier} keys`, pskJSON);
                 rej(chrome.runtime.lastError);
             } else {
-                log.info("PSK keys stored")
                 res();
             }
         });
@@ -108,7 +108,7 @@ async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
         return new Promise<Array<PSKKey>>(async (res, rej) => {
             chrome.storage.sync.get(identifier, async (resp) => {
                 if (!!chrome.runtime.lastError) {
-                    log.info("Could not fetch PSK keys");
+                    log.warn(`Could not fetch ${identifier} keys`);
                     rej(chrome.runtime.lastError);
                     return;
                 }
@@ -120,7 +120,6 @@ async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
                     let parsedKey = await parseJWK(exportedKey[i].key);
                     pskKeys.push(new PSKKey(parsedKey, exportedKey[i].id));
                 }
-                log.info(pskKeys);
                 res(pskKeys);
             });
         });
@@ -128,8 +127,12 @@ async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
 
 async function popPSKKey(identifier: string): Promise<PSKKey> {
     let pskKeys = await fetchPSKKeys(identifier);
+    if (pskKeys.length == 0) {
+        throw new Error(`No ${identifier} key available to pop`);
+    }
     let key = pskKeys.pop();
     await storePSKKeys(identifier, pskKeys)
+    log.info(`${pskKeys.length} ${identifier} keys left`);
     return key;
 }
 
@@ -146,7 +149,7 @@ export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uin
 }
 
 export async function createRecoveryKeys(n: number) {
-    let rcvKeys = new Array<RecoveryKey>();
+    let rcvKeys = new Array<ReplacementKey>();
     let jwk = new Array<JsonWebKey>();
     let i;
     for (i = 0; i < n; ++i) {
@@ -157,13 +160,13 @@ export async function createRecoveryKeys(n: number) {
         );
         let expKey =  await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
 
-        rcvKeys.push(new RecoveryKey(keyPair.privateKey));
+        rcvKeys.push(new ReplacementKey(keyPair.privateKey));
         jwk.push(expKey);
     }
 
     await storePSKKeys(RECOVERY, rcvKeys);
 
-    // Download keys as file
+    // Download recovery public keys as file
     let json = [JSON.stringify(jwk)];
     let blob1 = new Blob(json, { type: "text/plain;charset=utf-8" });
     let link = (window.URL ? URL : webkitURL).createObjectURL(blob1);
