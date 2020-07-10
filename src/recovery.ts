@@ -74,6 +74,14 @@ class RecoveryMessage {
             fmt: 'none',
         }).buffer;
     }
+
+    encode(): ArrayBuffer {
+        return CBOR.encodeCanonical({
+            attestationObject: this.attestationObject,
+            delegationSignature: byteArrayToBase64(this.delegationSignature),
+            backupCredentialId: this.backupCredId,
+        }).buffer;
+    }
 }
 
 class Delegation {
@@ -101,10 +109,10 @@ async function loadDelegations(): Promise<Array<Delegation>> {
                 let i;
                 let del = new Array<Delegation>()
                 for (i = 0; i < rawDelegations.length; ++i) {
-                    let rId = rawDelegations[i].public_key.kid;
                     let sign = rawDelegations[i].signature;
-                    let bId = rawDelegations[i].cred_id;
-                    del.push(new Delegation(sign, bId, rawDelegations[i].public_key));
+                    let bId = base64ToByteArray(rawDelegations[i].cred_id, true);
+                    const encBId = byteArrayToBase64(bId, true);
+                    del.push(new Delegation(sign, encBId, rawDelegations[i].public_key));
                 }
                 await resolve(del);
             } else {
@@ -127,8 +135,10 @@ async function loadBackupKeys(): Promise<Array<BackupKey>> {
                 let i;
                 let bckpKeys = new Array<BackupKey>()
                 for (i = 0; i < jwk.length; ++i) {
-                    let parsedKey = await parseJWK(jwk[i]);
-                    bckpKeys.push(new BackupKey(parsedKey, jwk[i].kid));
+                    let parsedKey = await parseJWK(jwk[i], []);
+                    let id = base64ToByteArray(jwk[i].kid, true);
+                    const encId = byteArrayToBase64(id, true);
+                    bckpKeys.push(new BackupKey(parsedKey, encId));
                 }
                 await resolve(bckpKeys);
             } else {
@@ -139,7 +149,7 @@ async function loadBackupKeys(): Promise<Array<BackupKey>> {
     });
 }
 
-async function parseJWK(jwk): Promise<CryptoKey> {
+async function parseJWK(jwk, usages): Promise<CryptoKey> {
     return window.crypto.subtle.importKey(
         "jwk",
         jwk,
@@ -148,7 +158,7 @@ async function parseJWK(jwk): Promise<CryptoKey> {
             namedCurve: "P-256"
         },
         true,
-        []
+        usages
     );
 }
 
@@ -207,7 +217,7 @@ async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
                 let pskKeys = new Array<PSKKey>();
                 let i;
                 for (i = 0; i < exportedKey.length; ++i) {
-                    let parsedKey = await parseJWK(exportedKey[i].key);
+                    let parsedKey = await parseJWK(exportedKey[i].key, ['sign']);
                     pskKeys.push(new PSKKey(parsedKey, exportedKey[i].id));
                 }
                 res(pskKeys);
@@ -253,6 +263,10 @@ export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uin
     return new Uint8Array(CBOR.encode(extOutput));
 }
 
+async function pskRecoveryExtensionOutput(recMsg: RecoveryMessage): Promise<Uint8Array> {
+    return new Uint8Array(recMsg.encode());
+}
+
 export async function createRecoveryKeys(n: number) {
     let rcvKeys = new Array<RecoveryKey>();
     let jwk = new Array<JsonWebKey>();
@@ -263,9 +277,11 @@ export async function createRecoveryKeys(n: number) {
             true,
             ['sign'],
         );
-        let expKey =  await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        let rk = new RecoveryKey(keyPair.privateKey)
+        let expKey: any = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        expKey.kid = rk.id;
 
-        rcvKeys.push(new RecoveryKey(keyPair.privateKey));
+        rcvKeys.push(rk);
         jwk.push(expKey);
     }
 
@@ -287,13 +303,15 @@ export async function createRecoveryKeys(n: number) {
 
 async function getDelegation(credentialId: string): Promise<Delegation> {
     const del = await fetchDelegations();
-    const rec = del.filter(x => x.backupId == credentialId);
-    return rec.length != 0 ? del[0] : null;
+    log.debug('Fetched delegations', del);
+    const rec = del.filter(x => x.backupId === credentialId);
+    return rec.length != 0 ? rec[0] : null;
 }
 
 async function getRecoveryKey(credentialId: string): Promise<RecoveryKey> {
     const rks = await fetchPSKKeys(RECOVERY);
-    const rk = rks.filter(x => x.id == credentialId);
+    log.debug(rks);
+    const rk = rks.filter(x => x.id === credentialId);
     return rk.length != 0 ? rk[0] : null;
 }
 
@@ -350,10 +368,13 @@ export const recover = async (
     log.debug('Recovery options', recOps);
 
     const rkPrv = await getCompatibleKeyFromCryptoKey(recOps.recoveryKey.key);
-    const rkPubRaw = await parseJWK(recOps.delegation.replacementKey);
+    const rkPubRaw = await parseJWK(recOps.delegation.replacementKey, []);
     const rkPub = await getCompatibleKeyFromCryptoKey(rkPubRaw);
 
-    const recMessage = (new RecoveryMessage()).init(recOps.delegation, rkPub, origin);
+    const recMessage = new RecoveryMessage();
+    await recMessage.init(recOps.delegation, rkPub, origin);
+    log.debug('Recovery message', recMessage);
+    const extOutput = recMessage.encode();
 
     // ToDo Continue here
 
@@ -373,8 +394,9 @@ export const recover = async (
     const clientDataHash = new Uint8Array(await window.crypto.subtle.digest('SHA-256', clientDataJSON));
 
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
+
     // ToDo Create PKS Extension message and add it to !!!authData!!!
-    const authenticatorData = await rkPrv.generateAuthenticatorData(rpID, 0, new Uint8Array(), null);
+    const authenticatorData = await rkPrv.generateAuthenticatorData(rpID, 0, new Uint8Array(), new Uint8Array(extOutput));
 
     const concatData = new Uint8Array(authenticatorData.length + clientDataHash.length);
     concatData.set(authenticatorData);

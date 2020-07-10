@@ -3,7 +3,14 @@ import {getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
 import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
-import {createRecoveryKeys, popBackupKey, pskSetupExtensionOutput, syncBackupKeys, syncDelegation} from "./recovery";
+import {
+    createRecoveryKeys,
+    popBackupKey,
+    PSK,
+    pskSetupExtensionOutput, recover,
+    syncBackupKeys,
+    syncDelegation
+} from "./recovery";
 
 const log = getLogger('webauthn');
 
@@ -22,9 +29,10 @@ export const generateRegistrationKeyAndAttestation = async (
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
 
-    // await syncBackupKeys(); // ToDo Add own method to trigger sync
+    // await syncBackupKeys();
     // await createRecoveryKeys(5);
-    await syncDelegation();
+    // await syncDelegation();
+    // return;
 
     let bckpKey = await popBackupKey();
     log.info('Used backup key', bckpKey);
@@ -83,6 +91,14 @@ export const generateKeyRequestAndAssertion = async (
     }
 
     origin = 'http://localhost:9005'; // Given origin does not work!
+
+    log.debug(JSON.stringify(publicKeyRequestOptions.extensions));
+    const reqExt: any = publicKeyRequestOptions.extensions;
+    if (reqExt !== undefined) {
+        if (reqExt.hasOwnProperty(PSK)) {
+            return await recover(origin, publicKeyRequestOptions, pin);
+        }
+    }
 
     // For now we will only worry about the first entry
     const requestedCredential = publicKeyRequestOptions.allowCredentials[0];

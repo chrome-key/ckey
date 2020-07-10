@@ -139,6 +139,9 @@ class ECDSA implements ICOSECompatibleKey {
         offset += counterToBytes(counter).length;
 
         if (!this.publicKey) {
+            if (extensionOutput != null) { // Extension for assertion
+                authenticatorData.set(extensionOutput, offset);
+            }
             return authenticatorData;
         }
 
@@ -161,7 +164,6 @@ class ECDSA implements ICOSECompatibleKey {
         offset += encodedKey.byteLength;
 
         // Variable length for extension
-        // ToDo Handle extension for assertion
         if (extensionOutput != null) {
             authenticatorData.set(extensionOutput, offset);
         }
