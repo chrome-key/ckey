@@ -106,9 +106,9 @@ class ECDSA implements ICOSECompatibleKey {
             const coseKey = await this.toCOSE(this.publicKey);
             encodedKey = new Uint8Array(CBOR.encode(coseKey));
             authenticatorDataLength += aaguid.length
-                + credIdLen.byteLength
+                + credIdLen.length
                 + credentialId.length
-                + encodedKey.byteLength;
+                + encodedKey.length;
         }
 
         if (extensionOutput != null) {
@@ -153,7 +153,7 @@ class ECDSA implements ICOSECompatibleKey {
 
         // 2 bytes for the authenticator key ID length. 16-bit unsigned big-endian integer.
         authenticatorData.set(credIdLen, offset);
-        offset += credIdLen.byteLength;
+        offset += credIdLen.length;
 
         // Variable length authenticator key ID
         authenticatorData.set(credentialId, offset);
@@ -161,7 +161,7 @@ class ECDSA implements ICOSECompatibleKey {
 
         // Variable length public key
         authenticatorData.set(encodedKey, offset);
-        offset += encodedKey.byteLength;
+        offset += encodedKey.length;
 
         // Variable length for extension
         if (extensionOutput != null) {

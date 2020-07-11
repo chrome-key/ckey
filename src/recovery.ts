@@ -61,10 +61,12 @@ class RecoveryMessage {
 
     async init(delegation: Delegation, rkPub: ICOSECompatibleKey, origin) {
         this.backupCredId = delegation.backupId;
-        this.delegationSignature = base64ToByteArray(delegation.signature);
+        this.delegationSignature = base64ToByteArray(delegation.signature, true);
 
         // Create attestation object for new key
         const recoveryCredId = base64ToByteArray(delegation.replacementId);
+
+        // ToDo New Credential should also contain recovery key
         const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, null);
         log.debug('AuthData of recovery message', authData);
 
@@ -204,7 +206,7 @@ async function storeDelegations(del: Array<Delegation>): Promise<void> {
     });
 }
 
-async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
+async function fetchPSKKeys(identifier: string, usages): Promise<Array<PSKKey>> {
         return new Promise<Array<PSKKey>>(async (res, rej) => {
             chrome.storage.sync.get(identifier, async (resp) => {
                 if (!!chrome.runtime.lastError) {
@@ -217,7 +219,7 @@ async function fetchPSKKeys(identifier: string): Promise<Array<PSKKey>> {
                 let pskKeys = new Array<PSKKey>();
                 let i;
                 for (i = 0; i < exportedKey.length; ++i) {
-                    let parsedKey = await parseJWK(exportedKey[i].key, ['sign']);
+                    let parsedKey = await parseJWK(exportedKey[i].key, usages);
                     pskKeys.push(new PSKKey(parsedKey, exportedKey[i].id));
                 }
                 res(pskKeys);
@@ -240,8 +242,8 @@ async function fetchDelegations(): Promise<Array<Delegation>> {
     });
 }
 
-async function popPSKKey(identifier: string): Promise<PSKKey> {
-    let pskKeys = await fetchPSKKeys(identifier);
+async function popPSKKey(identifier: string, usages): Promise<PSKKey> {
+    let pskKeys = await fetchPSKKeys(identifier, usages);
     if (pskKeys.length == 0) {
         throw new Error(`No ${identifier} key available to pop`);
     }
@@ -252,19 +254,23 @@ async function popPSKKey(identifier: string): Promise<PSKKey> {
 }
 
 export async function popBackupKey(): Promise<BackupKey> {
-    return popPSKKey(BACKUP);
+    return popPSKKey(BACKUP, ['sign']);
 }
 
 export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
     let compatibleKey = await getCompatibleKeyFromCryptoKey(backupKey.key);
-    let coseKey = await new Uint8Array(CBOR.encode(compatibleKey.toCOSE(backupKey.key)));
+    const coseKey = await compatibleKey.toCOSE(backupKey.key);
+    let encodedKey = new Uint8Array(CBOR.encode(coseKey));
 
-    let extOutput = new Map([[PSK, coseKey]]);
+    log.debug(encodedKey);
+
+    let extOutput = new Map([[PSK, encodedKey]]);
     return new Uint8Array(CBOR.encode(extOutput));
 }
 
 async function pskRecoveryExtensionOutput(recMsg: RecoveryMessage): Promise<Uint8Array> {
-    return new Uint8Array(recMsg.encode());
+    let extOutput = new Map([[PSK, recMsg.encode()]]);
+    return new Uint8Array(CBOR.encode(extOutput));
 }
 
 export async function createRecoveryKeys(n: number) {
@@ -309,7 +315,7 @@ async function getDelegation(credentialId: string): Promise<Delegation> {
 }
 
 async function getRecoveryKey(credentialId: string): Promise<RecoveryKey> {
-    const rks = await fetchPSKKeys(RECOVERY);
+    const rks = await fetchPSKKeys(RECOVERY, ['sign']);
     log.debug(rks);
     const rk = rks.filter(x => x.id === credentialId);
     return rk.length != 0 ? rk[0] : null;
@@ -374,7 +380,7 @@ export const recover = async (
     const recMessage = new RecoveryMessage();
     await recMessage.init(recOps.delegation, rkPub, origin);
     log.debug('Recovery message', recMessage);
-    const extOutput = recMessage.encode();
+    const extOutput = await pskRecoveryExtensionOutput(recMessage);
 
     // ToDo Continue here
 
