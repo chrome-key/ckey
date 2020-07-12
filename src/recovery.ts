@@ -53,13 +53,16 @@ export class RecoveryKey extends PSKKey {
 class RecoveryMessage {
     backupCredId: string;
     delegationSignature: Uint8Array;
-    attestationObject: ArrayBuffer;
+    pubKey: Uint8Array;
+
+    //attestationObject: ArrayBuffer;
+    //clientDataJSON: ArrayBuffer
 
     constructor() {
         // Dummy
     }
 
-    async init(delegation: Delegation, rkPub: ICOSECompatibleKey, origin) {
+    async init(delegation: Delegation, rkPub: ICOSECompatibleKey, origin: string, challenge: ArrayBuffer) {
         this.backupCredId = delegation.backupId;
         this.delegationSignature = base64ToByteArray(delegation.signature, true);
 
@@ -67,19 +70,36 @@ class RecoveryMessage {
         const recoveryCredId = base64ToByteArray(delegation.replacementId);
 
         // ToDo New Credential should also contain recovery key
+        // ToDo Use valid attestation response
         const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, null);
         log.debug('AuthData of recovery message', authData);
 
-        this.attestationObject = CBOR.encodeCanonical({
+        console.log(rkPub.publicKey)
+        console.log(rkPub.privateKey)
+
+        const coseKey = await rkPub.toCOSE(rkPub.publicKey);
+        this.pubKey = new Uint8Array(CBOR.encode(coseKey));
+
+        /*this.attestationObject = CBOR.encodeCanonical({
             attStmt: new Map(),
             authData: authData,
             fmt: 'none',
         }).buffer;
+
+
+        const clientData = await rkPub.generateClientData(
+         challenge,
+            { origin, type: 'webauthn.create' },
+        );
+
+        this.clientDataJSON = base64ToByteArray(window.btoa(clientData), true);*/
     }
 
     encode(): ArrayBuffer {
         return CBOR.encodeCanonical({
-            attestationObject: this.attestationObject,
+            /*clientDataJSON: this.clientDataJSON,
+            attestationObject: this.attestationObject,*/
+            publicKey: this.pubKey,
             delegationSignature: byteArrayToBase64(this.delegationSignature),
             backupCredentialId: this.backupCredId,
         }).buffer;
@@ -362,6 +382,8 @@ export const recover = async (
         return null;
     }
 
+    await syncDelegation();
+
     origin = 'http://localhost:9005'; // Given origin does not work!
 
     // For now we will only worry about the first entry
@@ -374,11 +396,13 @@ export const recover = async (
     log.debug('Recovery options', recOps);
 
     const rkPrv = await getCompatibleKeyFromCryptoKey(recOps.recoveryKey.key);
+    log.debug('prv', rkPrv.privateKey);
     const rkPubRaw = await parseJWK(recOps.delegation.replacementKey, []);
     const rkPub = await getCompatibleKeyFromCryptoKey(rkPubRaw);
+    log.debug('pub', rkPub.publicKey);
 
     const recMessage = new RecoveryMessage();
-    await recMessage.init(recOps.delegation, rkPub, origin);
+    await recMessage.init(recOps.delegation, rkPub, origin, publicKeyRequestOptions.challenge as ArrayBuffer);
     log.debug('Recovery message', recMessage);
     const extOutput = await pskRecoveryExtensionOutput(recMessage);
 
@@ -401,7 +425,6 @@ export const recover = async (
 
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
 
-    // ToDo Create PKS Extension message and add it to !!!authData!!!
     const authenticatorData = await rkPrv.generateAuthenticatorData(rpID, 0, new Uint8Array(), new Uint8Array(extOutput));
 
     const concatData = new Uint8Array(authenticatorData.length + clientDataHash.length);

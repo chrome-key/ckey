@@ -38,7 +38,11 @@ export interface ICOSECompatibleKey {
 class ECDSA implements ICOSECompatibleKey {
 
     public static async fromKey(key: CryptoKey): Promise<ECDSA> {
-        return new ECDSA(ellipticNamedCurvesToCOSE[(key.algorithm as EcKeyAlgorithm).namedCurve], key);
+        if (key.type === "public") {
+            return new ECDSA(ellipticNamedCurvesToCOSE[(key.algorithm as EcKeyAlgorithm).namedCurve], null, key);
+        } else {
+            return new ECDSA(ellipticNamedCurvesToCOSE[(key.algorithm as EcKeyAlgorithm).namedCurve], key);
+        }
     }
 
     public static async fromCOSEAlgorithm(algorithm: number): Promise<ECDSA> {
