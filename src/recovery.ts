@@ -54,9 +54,8 @@ class RecoveryMessage {
     backupCredId: string;
     delegationSignature: Uint8Array;
     pubKey: Uint8Array;
-
-    //attestationObject: ArrayBuffer;
-    //clientDataJSON: ArrayBuffer
+    attestationObject: Uint8Array;
+    clientDataJSON: Uint8Array;
 
     constructor() {
         // Dummy
@@ -74,34 +73,33 @@ class RecoveryMessage {
         const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, null);
         log.debug('AuthData of recovery message', authData);
 
-        console.log(rkPub.publicKey)
-        console.log(rkPub.privateKey)
-
         const coseKey = await rkPub.toCOSE(rkPub.publicKey);
         this.pubKey = new Uint8Array(CBOR.encode(coseKey));
 
-        /*this.attestationObject = CBOR.encodeCanonical({
+        this.attestationObject = CBOR.encodeCanonical({
             attStmt: new Map(),
             authData: authData,
             fmt: 'none',
-        }).buffer;
+        });
 
 
         const clientData = await rkPub.generateClientData(
          challenge,
             { origin, type: 'webauthn.create' },
         );
+        this.clientDataJSON = base64ToByteArray(window.btoa(clientData), true);
 
-        this.clientDataJSON = base64ToByteArray(window.btoa(clientData), true);*/
     }
 
     encode(): ArrayBuffer {
         return CBOR.encodeCanonical({
-            /*clientDataJSON: this.clientDataJSON,
-            attestationObject: this.attestationObject,*/
             publicKey: this.pubKey,
             delegationSignature: byteArrayToBase64(this.delegationSignature),
             backupCredentialId: this.backupCredId,
+            authAttData: {
+                clientDataJSON: this.clientDataJSON,
+                attestationObject: this.attestationObject
+            },
         }).buffer;
     }
 }
