@@ -1,7 +1,8 @@
-import { disabledIcons, enabledIcons } from './constants';
-import { getLogger } from './logging';
-import { getOriginFromUrl, webauthnParse, webauthnStringify } from './utils';
-import { generateKeyRequestAndAssertion, generateRegistrationKeyAndAttestation } from './webauthn';
+import {disabledIcons, enabledIcons} from './constants';
+import {getLogger} from './logging';
+import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
+import {generateKeyRequestAndAssertion, generateRegistrationKeyAndAttestation} from './webauthn';
+import {syncBackupKeys, syncDelegation} from "./recovery";
 
 const log = getLogger('background');
 
@@ -31,6 +32,18 @@ const requestPin = async (tabId: number, origin: string, newPin: boolean = true)
     chrome.pageAction.hide(tabId);
     chrome.pageAction.setIcon({ tabId, path: disabledIcons });
     return pin;
+};
+
+const syncBackup = async (backupContent) => {
+    console.log('Sync Backup called');
+
+    await syncBackupKeys(backupContent);
+};
+
+const syncDel = async (delegationContent) => {
+    console.log('Sync Delegation called');
+
+    await syncDelegation(delegationContent);
 };
 
 const create = async (msg, sender: chrome.runtime.MessageSender) => {
@@ -66,16 +79,16 @@ const create = async (msg, sender: chrome.runtime.MessageSender) => {
 
 const sign = async (msg, sender: chrome.runtime.MessageSender) => {
     const opts = webauthnParse(msg.options);
+    const origin = getOriginFromUrl(sender.url);
     const pin = await requestPin(sender.tab.id, origin);
 
     try {
         const credential = await generateKeyRequestAndAssertion(origin, opts.publicKey, `${pin}`);
-        const authenticatedResponseData = {
+        return {
             credential: webauthnStringify(credential),
             requestID: msg.requestID,
             type: 'sign_response',
         };
-        return authenticatedResponseData;
     } catch (e) {
         if (e instanceof DOMException) {
             const { code, message, name } = e;
@@ -102,6 +115,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 cb(msg.pin);
                 delete (pinProtectedCallbacks[msg.tabId]);
             }
+            break;
+        case 'syncBackup':
+            syncBackup(msg.backup).then(() => alert("Backup file processed"));
+            break;
+        case 'syncDelegation':
+            syncDel(msg.delegation).then(() => alert("Delegation file processed"));
             break;
         default:
             sendResponse(null);

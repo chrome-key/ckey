@@ -68,7 +68,7 @@ export const generateRegistrationKeyAndAttestation = async (
     log.debug('send attestation');
 
     return {
-        getClientExtensionResults: () => ({}),
+        getClientExtensionResults: () => ({}), // ToDo Put PSK extension data
         id: encCredId,
         rawId: credentialId,
         response: {
@@ -90,7 +90,8 @@ export const generateKeyRequestAndAssertion = async (
         return null;
     }
 
-    origin = 'http://localhost:9005'; // Given origin does not work!
+    // origin = 'http://localhost:9005'; // Given origin does not work!
+    log.debug('origin', origin)
 
     log.debug(JSON.stringify(publicKeyRequestOptions.extensions));
     const reqExt: any = publicKeyRequestOptions.extensions;

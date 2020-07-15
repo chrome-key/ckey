@@ -11,16 +11,32 @@ const BACKUP: string = "backup"
 const RECOVERY: string = "recovery"
 const DELEGATION: string = "delegation"
 
-export async function syncBackupKeys () {
-    const bckpKeys = await loadBackupKeys();
+export async function syncBackupKeys (content) {
+    let jwk = JSON.parse(content);
+    let i;
+    let bckpKeys = new Array<BackupKey>()
+    for (i = 0; i < jwk.length; ++i) {
+        let parsedKey = await parseJWK(jwk[i], []);
+        let id = base64ToByteArray(jwk[i].kid, true);
+        const encId = byteArrayToBase64(id, true);
+        bckpKeys.push(new BackupKey(parsedKey, encId));
+    }
     log.info("Loaded backup keys", bckpKeys);
     await storePSKKeys(BACKUP, bckpKeys);
 }
 
-export async function syncDelegation () {
-    const delegations = await loadDelegations();
-    log.info("Loaded delegation", delegations);
-    await storeDelegations(delegations);
+export async function syncDelegation (content) {
+    let rawDelegations = JSON.parse(content);
+    let i;
+    let del = new Array<Delegation>()
+    for (i = 0; i < rawDelegations.length; ++i) {
+        let sign = rawDelegations[i].signature;
+        let bId = base64ToByteArray(rawDelegations[i].cred_id, true);
+        const encBId = byteArrayToBase64(bId, true);
+        del.push(new Delegation(sign, encBId, rawDelegations[i].public_key));
+    }
+    log.info("Loaded delegation", del);
+    await storeDelegations(del);
 }
 
 class PSKKey {
@@ -135,32 +151,6 @@ async function loadDelegations(): Promise<Array<Delegation>> {
                     del.push(new Delegation(sign, encBId, rawDelegations[i].public_key));
                 }
                 await resolve(del);
-            } else {
-                reject(status);
-            }
-        };
-        xhr.send();
-    });
-}
-
-async function loadBackupKeys(): Promise<Array<BackupKey>> {
-    log.info("Loading backup keys from JSON file");
-    return new Promise<Array<BackupKey>>(function (resolve, reject) {
-        let xhr = new XMLHttpRequest();
-        xhr.open("GET", chrome.extension.getURL('/recovery/backup.json'), true);
-        xhr.onload = async function () {
-            let status = xhr.status;
-            if (status == 200) {
-                let jwk = JSON.parse(this.response);
-                let i;
-                let bckpKeys = new Array<BackupKey>()
-                for (i = 0; i < jwk.length; ++i) {
-                    let parsedKey = await parseJWK(jwk[i], []);
-                    let id = base64ToByteArray(jwk[i].kid, true);
-                    const encId = byteArrayToBase64(id, true);
-                    bckpKeys.push(new BackupKey(parsedKey, encId));
-                }
-                await resolve(bckpKeys);
             } else {
                 reject(status);
             }
@@ -380,9 +370,8 @@ export const recover = async (
         return null;
     }
 
-    await syncDelegation();
-
-    origin = 'http://localhost:9005'; // Given origin does not work!
+    //origin = 'http://localhost:9005'; // Given origin does not work!
+    log.debug('origin', origin)
 
     // For now we will only worry about the first entry
     const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
@@ -403,8 +392,6 @@ export const recover = async (
     await recMessage.init(recOps.delegation, rkPub, origin, publicKeyRequestOptions.challenge as ArrayBuffer);
     log.debug('Recovery message', recMessage);
     const extOutput = await pskRecoveryExtensionOutput(recMessage);
-
-    // ToDo Continue here
 
     await saveKey(recOps.recoveryKey.id, rkPrv.privateKey, pin);
 
@@ -430,7 +417,7 @@ export const recover = async (
     concatData.set(clientDataHash, authenticatorData.length);
 
     const signature = await rkPrv.sign(concatData);
-    return {
+    return { // ToDo Make getClientExtensionResults work
         id: recOps.recoveryKey.id,
         rawId: base64ToByteArray(recOps.recoveryKey.id, true),
         response: {
