@@ -6,53 +6,48 @@ import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './uti
 
 const log = getLogger('webauthn');
 
-export const generateRegistrationKeyAndAttestation = async (
+export const generateAttestationResponse = async (
     origin: string,
     publicKeyCreationOptions: PublicKeyCredentialCreationOptions,
     pin: string,
 ): Promise<PublicKeyCredential> => {
-    if (publicKeyCreationOptions.attestation === 'direct') {
-        log.warn('We are being requested to create a key with "direct" attestation');
-        log.warn(`We can only perform self-attestation, therefore we will not be provisioning any keys`);
+    if (publicKeyCreationOptions.attestation !== 'none') {
+        log.warn(`We are being requested to create a credential with ${publicKeyCreationOptions.attestation} attestation`);
+        log.warn(`We can only perform none attestation, therefore we will not be provisioning any credentials`);
         return null;
     }
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
-    const user = publicKeyCreationOptions.user;
-    const userID = byteArrayToBase64(new Uint8Array(user.id as ArrayBuffer));
-    const keyID = window.btoa(`${userID}@${rpID}`);
+    const credId = createCredentialId();
+    const encCredId = byteArrayToBase64(credId, true);
 
     // First check if there is already a key for this rp ID
-    if (await keyExists(keyID)) {
-        throw new Error(`key with id ${keyID} already exists`);
+    if (await keyExists(encCredId)) {
+        throw new Error(`credential with id ${encCredId} already exists`);
     }
-    log.debug('key ID', keyID);
+    log.debug('key ID', encCredId);
     const compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
 
     // TODO Increase key counter
-    const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0);
+    const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credId);
     const clientData = await compatibleKey.generateClientData(
         publicKeyCreationOptions.challenge as ArrayBuffer,
         { origin, type: 'webauthn.create' },
     );
-    const signature = await compatibleKey.sign(clientData);
 
     const attestationObject = CBOR.encodeCanonical({
-        attStmt: {
-            alg: compatibleKey.algorithm,
-            sig: signature,
-        },
+        attStmt: new Map(),
         authData: authenticatorData,
-        fmt: 'packed',
+        fmt: 'none',
     }).buffer;
 
-    // Now that we have built all we need, let's save the key
-    await saveKey(keyID, compatibleKey.privateKey, pin);
+    // Now that we have built all we need, let's save the private key
+    await saveKey(encCredId, compatibleKey.privateKey, pin);
 
     return {
         getClientExtensionResults: () => ({}),
-        id: keyID,
-        rawId: base64ToByteArray(keyID),
+        id: encCredId,
+        rawId: credId,
         response: {
             attestationObject,
             clientDataJSON: base64ToByteArray(window.btoa(clientData)),
@@ -61,25 +56,31 @@ export const generateRegistrationKeyAndAttestation = async (
     } as PublicKeyCredential;
 };
 
-export const generateKeyRequestAndAttestation = async (
+export const generateAssertionResponse = async (
     origin: string,
     publicKeyRequestOptions: PublicKeyCredentialRequestOptions,
     pin: string,
 ): Promise<Credential> => {
     if (!publicKeyRequestOptions.allowCredentials) {
-        log.debug('No keys requested');
+        log.debug('No credentials requested');
         return null;
     }
+
     // For now we will only worry about the first entry
     const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
-    const keyIDArray: ArrayBuffer = requestedCredential.id as ArrayBuffer;
-    const keyID = byteArrayToBase64(new Uint8Array(keyIDArray));
-    const key = await fetchKey(keyID, pin);
+    const credId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
+    const endCredId = byteArrayToBase64(new Uint8Array(credId), true);
+    const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
+
+    log.debug('credential ID', endCredId);
+
+    const key = await fetchKey(endCredId, pin);
 
     if (!key) {
-        throw new Error(`key with id ${keyID} not found`);
+        throw new Error(`credentials with id ${endCredId} not found`);
     }
     const compatibleKey = await getCompatibleKeyFromCryptoKey(key);
+
     const clientData = await compatibleKey.generateClientData(
         publicKeyRequestOptions.challenge as ArrayBuffer,
         {
@@ -87,21 +88,40 @@ export const generateKeyRequestAndAttestation = async (
             tokenBinding: {
                 status: 'not-supported',
             },
-            type: 'webauthn.create',
+            type: 'webauthn.get',
         },
     );
-    const signature = await compatibleKey.sign(clientData);
-    const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
-    const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0);
+    const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, new Uint8Array());
+    const clientDataJSON = base64ToByteArray(window.btoa(clientData));
+    const clientDataHash = new Uint8Array(await window.crypto.subtle.digest('SHA-256', clientDataJSON));
+
+    const concatData = new Uint8Array(authenticatorData.length + clientDataHash.length);
+    concatData.set(authenticatorData);
+    concatData.set(clientDataHash, authenticatorData.length);
+
+
+    const signature = await compatibleKey.sign(concatData);
+
     return {
-        id: keyID,
-        rawId: keyIDArray,
+        id: endCredId,
+        rawId: credId,
         response: {
             authenticatorData: authenticatorData.buffer,
-            clientDataJSON: base64ToByteArray(window.btoa(clientData)),
-            signature,
+            clientDataJSON: clientDataJSON,
+            signature: (new Uint8Array(signature)).buffer,
             userHandle: new ArrayBuffer(0), // This should be nullable
         },
         type: 'public-key',
     } as Credential;
 };
+
+function createCredentialId(): Uint8Array{
+    let enc =  new TextEncoder();
+    let dt = new Date().getTime();
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = (dt + Math.random()*16)%16 | 0;
+        dt = Math.floor(dt/16);
+        return (c=='x' ? r :(r&0x3|0x8)).toString(16);
+    });
+    return base64ToByteArray(byteArrayToBase64(enc.encode(uuid), true), true);
+}

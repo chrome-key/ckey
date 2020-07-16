@@ -69,8 +69,9 @@ export function byteArrayToBase64(arr: Uint8Array, urlEncoded: boolean = false):
   const result = btoa(String.fromCharCode(...arr));
   if (urlEncoded) {
     return result.replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=/g, "");
   }
   return result;
 }
@@ -79,8 +80,9 @@ export function base64ToByteArray(str: string, urlEncoded: boolean = false): Uin
   let rawInput = str;
   if (urlEncoded) {
     rawInput = padString(rawInput)
-      .replace(/\-/g, '+')
-      .replace(/_/g, '/');
+        .replace(/-/g, '+')
+        .replace(/_/g, '/')
+        .replace(/=/g, "");
   }
   return Uint8Array.from(atob(rawInput), (c) => c.charCodeAt(0));
 }

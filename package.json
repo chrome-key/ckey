@@ -29,6 +29,8 @@
         "@types/jquery": "^3.3.31",
         "@types/loglevel": "^1.6.3",
         "@types/webappsec-credential-management": "^0.3.11",
+        "asn1js": "^2.0.26",
+        "bn.js": "^5.1.2",
         "cbor": "^4.3.0",
         "jquery": "^3.4.1",
         "loglevel": "^1.6.6",
