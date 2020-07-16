@@ -85,7 +85,6 @@ class RecoveryMessage {
         const recoveryCredId = base64ToByteArray(delegation.replacementId);
 
         // ToDo New Credential should also contain recovery key
-        // ToDo Use valid attestation response
         const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, null);
         log.debug('AuthData of recovery message', authData);
 
@@ -131,32 +130,6 @@ class Delegation {
         this.replacementId = jwk.kid;
         this.replacementKey = jwk;
     }
-}
-
-async function loadDelegations(): Promise<Array<Delegation>> {
-    log.info("Loading delegations from JSON file");
-    return new Promise<Array<Delegation>>(function (resolve, reject) {
-        let xhr = new XMLHttpRequest();
-        xhr.open("GET", chrome.extension.getURL('/recovery/delegation.json'), true);
-        xhr.onload = async function () {
-            let status = xhr.status;
-            if (status == 200) {
-                let rawDelegations = JSON.parse(this.response);
-                let i;
-                let del = new Array<Delegation>()
-                for (i = 0; i < rawDelegations.length; ++i) {
-                    let sign = rawDelegations[i].signature;
-                    let bId = base64ToByteArray(rawDelegations[i].cred_id, true);
-                    const encBId = byteArrayToBase64(bId, true);
-                    del.push(new Delegation(sign, encBId, rawDelegations[i].public_key));
-                }
-                await resolve(del);
-            } else {
-                reject(status);
-            }
-        };
-        xhr.send();
-    });
 }
 
 async function parseJWK(jwk, usages): Promise<CryptoKey> {
@@ -262,7 +235,7 @@ async function popPSKKey(identifier: string, usages): Promise<PSKKey> {
 }
 
 export async function popBackupKey(): Promise<BackupKey> {
-    return popPSKKey(BACKUP, ['sign']);
+    return popPSKKey(BACKUP, []);
 }
 
 export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {

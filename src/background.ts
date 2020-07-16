@@ -2,7 +2,7 @@ import {disabledIcons, enabledIcons} from './constants';
 import {getLogger} from './logging';
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 import {generateKeyRequestAndAssertion, generateRegistrationKeyAndAttestation} from './webauthn';
-import {syncBackupKeys, syncDelegation} from "./recovery";
+import {createRecoveryKeys, syncBackupKeys, syncDelegation} from "./recovery";
 
 const log = getLogger('background');
 
@@ -45,6 +45,12 @@ const syncDel = async (delegationContent) => {
 
     await syncDelegation(delegationContent);
 };
+
+const recovery = async (n) => {
+    console.log('Create recovery keys called')
+
+    await createRecoveryKeys(n);
+}
 
 const create = async (msg, sender: chrome.runtime.MessageSender) => {
     if (!sender.tab || !sender.tab.id) {
@@ -121,6 +127,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
         case 'syncDelegation':
             syncDel(msg.delegation).then(() => alert("Delegation file processed"));
+            break;
+        case 'recovery':
+            recovery(msg.amount).then(() => alert("Creating recovery keys finished"))
             break;
         default:
             sendResponse(null);

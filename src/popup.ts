@@ -55,6 +55,14 @@ $(() => {
             reader.readAsText(f);
         });
 
+        $('#recovery').on('click', function(evt: Event) {
+            evt.preventDefault();
+            chrome.runtime.sendMessage({
+                amount: 5, // ToDo Read real input
+                type: 'recovery',
+            });
+        });
+
 
         const tabKey = `tab-${currentTab.id}`;
         chrome.storage.local.get([tabKey], (result) => {
