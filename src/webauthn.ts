@@ -4,17 +4,15 @@ import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
 import {
-    createRecoveryKeys,
-    popBackupKey,
+    getBackupKey,
     PSK,
     pskSetupExtensionOutput, recover,
-    syncBackupKeys,
-    syncDelegation
 } from "./recovery";
 
 const log = getLogger('webauthn');
 
-export const generateRegistrationKeyAndAttestation = async (
+// Attestation
+export const processCredentialCreation = async (
     origin: string,
     publicKeyCreationOptions: PublicKeyCredentialCreationOptions,
     pin: string,
@@ -23,34 +21,39 @@ export const generateRegistrationKeyAndAttestation = async (
         log.warn('We can perform only none attestation');
         return null;
     }
-    log.info(JSON.stringify(publicKeyCreationOptions.extensions));
-    // ToDo Trigger PSK flow only if RP signals extension support
+
+    let supportRecovery = false;
+    const reqExt: any = publicKeyCreationOptions.extensions;
+    if (reqExt !== undefined) {
+        if (reqExt.hasOwnProperty(PSK)) {
+            supportRecovery = true;
+            log.info('RP supports PSK');
+        }
+    }
 
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
 
-    // await syncBackupKeys();
-    // await createRecoveryKeys(5);
-    // await syncDelegation();
-    // return;
+    let bckpKey = await getBackupKey();
+    log.info('Use backup key', bckpKey);
 
-    let bckpKey = await popBackupKey();
-    log.info('Used backup key', bckpKey);
+    const credId = base64ToByteArray(bckpKey.id, true);
+    const encCredId = byteArrayToBase64(credId, true);
 
-    const pskExt = await pskSetupExtensionOutput(bckpKey);
-
-    const credentialId = base64ToByteArray(bckpKey.id, true);
-    const encCredId = byteArrayToBase64(credentialId, true);
-
-    // Check if there is already a key for this rp ID
     if (await keyExists(encCredId)) {
-        throw new Error(`key with id ${encCredId} already exists`);
+        throw new Error(`credential with id ${encCredId} already exists`);
     }
 
     let compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
 
-    // TODO Increase key counter
-    const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credentialId, pskExt);
+    let extOutput = null;
+    if (supportRecovery) {
+        extOutput = await pskSetupExtensionOutput(bckpKey);
+    }
+    const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credId, extOutput);
+
+    // ToDo Add support for credential counter
+
     const clientData = await compatibleKey.generateClientData(
         publicKeyCreationOptions.challenge as ArrayBuffer,
         { origin, type: 'webauthn.create' },
@@ -62,15 +65,14 @@ export const generateRegistrationKeyAndAttestation = async (
         fmt: 'none',
     }).buffer;
 
-    // Now that we have built all we need, let's save the key
     await saveKey(encCredId, compatibleKey.privateKey, pin);
 
-    log.debug('send attestation');
+    log.debug('Attestation created');
 
     return {
         getClientExtensionResults: () => ({}), // ToDo Put PSK extension data
         id: encCredId,
-        rawId: credentialId,
+        rawId: credId,
         response: {
             attestationObject,
             clientDataJSON: base64ToByteArray(window.btoa(clientData)),
@@ -80,36 +82,33 @@ export const generateRegistrationKeyAndAttestation = async (
 };
 
 // Assertion
-export const generateKeyRequestAndAssertion = async (
+export const processCredentialRequest = async (
     origin: string,
     publicKeyRequestOptions: PublicKeyCredentialRequestOptions,
     pin: string,
 ): Promise<Credential> => {
     if (!publicKeyRequestOptions.allowCredentials) {
-        log.debug('No keys requested');
+        log.debug('No credentials requested');
         return null;
     }
 
-    // origin = 'http://localhost:9005'; // Given origin does not work!
-    log.debug('origin', origin)
-
-    log.debug(JSON.stringify(publicKeyRequestOptions.extensions));
     const reqExt: any = publicKeyRequestOptions.extensions;
     if (reqExt !== undefined) {
         if (reqExt.hasOwnProperty(PSK)) {
+            log.debug('Recovery requested');
             return await recover(origin, publicKeyRequestOptions, pin);
         }
     }
 
-    // For now we will only worry about the first entry
-    const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
-    const credentialId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
-    const encCredId = byteArrayToBase64(new Uint8Array(credentialId), true);
+    const requestedCredential = publicKeyRequestOptions.allowCredentials[0]; // ToDo Handle all entries
+    const credId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
+    const encCredId = byteArrayToBase64(new Uint8Array(credId), true);
+    const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
 
     const key = await fetchKey(encCredId, pin);
 
     if (!key) {
-        throw new Error(`key with id ${encCredId} not found`);
+        throw new Error(`credential with id ${encCredId} not found`);
     }
     const compatibleKey = await getCompatibleKeyFromCryptoKey(key);
     const clientData = await compatibleKey.generateClientData(
@@ -125,23 +124,26 @@ export const generateKeyRequestAndAssertion = async (
     const clientDataJSON = base64ToByteArray(window.btoa(clientData));
     const clientDataHash = new Uint8Array(await window.crypto.subtle.digest('SHA-256', clientDataJSON));
 
-    const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
+    // ToDo Update counter
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, new Uint8Array(), null);
 
+    // Prepare input for signature
     const concatData = new Uint8Array(authenticatorData.length + clientDataHash.length);
     concatData.set(authenticatorData);
     concatData.set(clientDataHash, authenticatorData.length);
 
     const signature = await compatibleKey.sign(concatData);
-    log.info('signature', signature);
+    log.debug('signature', signature);
+    log.debug('clientData', clientData);
+
     return {
         id: encCredId,
-        rawId: credentialId,
+        rawId: credId,
         response: {
             authenticatorData: authenticatorData.buffer,
             clientDataJSON: clientDataJSON,
             signature: (new Uint8Array(signature)).buffer,
-            userHandle: new ArrayBuffer(0), // This should be nullable
+            userHandle: new ArrayBuffer(0),
         },
         type: 'public-key',
     } as Credential;

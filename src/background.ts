@@ -1,7 +1,7 @@
 import {disabledIcons, enabledIcons} from './constants';
 import {getLogger} from './logging';
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
-import {generateKeyRequestAndAssertion, generateRegistrationKeyAndAttestation} from './webauthn';
+import {processCredentialRequest, processCredentialCreation} from './webauthn';
 import {createRecoveryKeys, syncBackupKeys, syncDelegation} from "./recovery";
 
 const log = getLogger('background');
@@ -63,7 +63,7 @@ const create = async (msg, sender: chrome.runtime.MessageSender) => {
 
     try {
         const opts = webauthnParse(msg.options);
-        const credential = await generateRegistrationKeyAndAttestation(
+        const credential = await processCredentialCreation(
             origin,
             opts.publicKey,
             `${pin}`,
@@ -89,7 +89,7 @@ const sign = async (msg, sender: chrome.runtime.MessageSender) => {
     const pin = await requestPin(sender.tab.id, origin);
 
     try {
-        const credential = await generateKeyRequestAndAssertion(origin, opts.publicKey, `${pin}`);
+        const credential = await processCredentialRequest(origin, opts.publicKey, `${pin}`);
         return {
             credential: webauthnStringify(credential),
             requestID: msg.requestID,

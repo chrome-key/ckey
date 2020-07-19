@@ -1,14 +1,17 @@
-import { ivLength, keyExportFormat, saltLength } from './constants';
-import { base64ToByteArray, byteArrayToBase64, concatenate } from './utils';
+import {ivLength, keyExportFormat, saltLength} from './constants';
+import {base64ToByteArray, byteArrayToBase64, concatenate} from './utils';
 import {getLogger} from "./logging";
+import {ExportContainer, ExportContainerType} from "./recovery";
+
+const log = getLogger('storage');
 
 export const keyExists = (key: string): Promise<boolean> => {
     return new Promise<boolean>(async (res, rej) => {
-        chrome.storage.sync.get(key, (resp) => {
+        chrome.storage.sync.get({[key]: null}, (resp) => {
             if (!!chrome.runtime.lastError) {
                 rej(chrome.runtime.lastError);
             } else {
-                res(!!resp[key]);
+                res(!(resp[key] == null));
             }
         });
     });
@@ -26,7 +29,7 @@ const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey>
     const derivationKey = await window.crypto.subtle.importKey(
         'raw',
         enc.encode(pin),
-        { name: 'PBKDF2', length: 256 },
+        {name: 'PBKDF2', length: 256},
         false,
         ['deriveBits', 'deriveKey'],
     );
@@ -39,21 +42,62 @@ const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey>
     return window.crypto.subtle.deriveKey(
         pbkdf2Params,
         derivationKey,
-        { name: 'AES-GCM', length: 256 },
+        {name: 'AES-GCM', length: 256},
         true,
         ['wrapKey', 'unwrapKey'],
     );
 };
 
-const log = getLogger('storage');
+export async function saveExportContainer(cType: ExportContainerType, container: Array<ExportContainer>): Promise<void> {
+    let exportJSON = JSON.stringify(container);
+
+    log.debug(`Storing ${cType} container`, exportJSON);
+
+    return new Promise<void>(async (res, rej) => {
+        chrome.storage.sync.set({[cType]: exportJSON}, () => {
+            if (!!chrome.runtime.lastError) {
+                rej(chrome.runtime.lastError);
+            } else {
+                res();
+            }
+        });
+    });
+}
+
+export async function fetchExportContainer(cType: ExportContainerType): Promise<Array<ExportContainer>> {
+    return new Promise<Array<ExportContainer>>(async (res, rej) => {
+        chrome.storage.sync.get({[cType]: null}, async (resp) => {
+            if (!!chrome.runtime.lastError) {
+                log.warn(`Could not fetch ${cType} container`);
+                rej(chrome.runtime.lastError);
+                return;
+            }
+
+            if (resp[cType] == null) {
+                return rej(`Container ${cType} not found`);
+            }
+
+            let exportJSON = await JSON.parse(resp[cType]);
+            let exportContainer = new Array<ExportContainer>();
+            let i;
+            for (i = 0; i < exportJSON.length; ++i) {
+                exportContainer.push(new ExportContainer(exportJSON[i].id, exportJSON[i].payload));
+            }
+            res(exportContainer);
+        });
+    });
+}
 
 export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => {
     log.debug('Fetching key for', key);
     return new Promise<CryptoKey>(async (res, rej) => {
-        chrome.storage.sync.get(key, async (resp) => {
+        chrome.storage.sync.get({[key]: null}, async (resp) => {
             if (!!chrome.runtime.lastError) {
                 rej(chrome.runtime.lastError);
                 return;
+            }
+            if (resp[key] == null) {
+                return rej("Key not found");
             }
             const payload = base64ToByteArray(resp[key]);
             const saltByteLength = payload[0];
@@ -116,12 +160,10 @@ export const saveKey = (key: string, privateKey: CryptoKey, pin: string): Promis
             keyAlgorithm,
             wrappedKey);
 
-        chrome.storage.sync.set({ [key]: byteArrayToBase64(payload) }, () => {
+        chrome.storage.sync.set({[key]: byteArrayToBase64(payload)}, () => {
             if (!!chrome.runtime.lastError) {
-                log.info("Key not stored")
                 rej(chrome.runtime.lastError);
             } else {
-                log.info("Key stored")
                 res();
             }
         });

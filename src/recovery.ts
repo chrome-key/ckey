@@ -1,72 +1,130 @@
 import * as CBOR from 'cbor';
-import {getLogger} from "./logging";
-import {getCompatibleKeyFromCryptoKey, ICOSECompatibleKey} from "./crypto";
-import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from "./utils";
-import {saveKey} from "./storage";
+import {getLogger} from './logging';
+import {getCompatibleKeyFromCryptoKey, ICOSECompatibleKey} from './crypto';
+import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from './utils';
+import {fetchExportContainer, saveExportContainer, saveKey} from './storage';
 
 const log = getLogger('recovery');
 
-export const PSK: string = "psk"
-const BACKUP: string = "backup"
-const RECOVERY: string = "recovery"
-const DELEGATION: string = "delegation"
+export const PSK: string = 'psk'
+
+export type ExportContainerType = string
+const BACKUP: ExportContainerType = 'backup'
+const RECOVERY: ExportContainerType = 'recovery'
+const DELEGATION: ExportContainerType = 'delegation'
 
 export async function syncBackupKeys (content) {
-    let jwk = JSON.parse(content);
+    const jwk = JSON.parse(content);
     let i;
-    let bckpKeys = new Array<BackupKey>()
+    const container = new Array<ExportContainer>();
     for (i = 0; i < jwk.length; ++i) {
-        let parsedKey = await parseJWK(jwk[i], []);
-        let id = base64ToByteArray(jwk[i].kid, true);
+        const parsedKey = await parseJWK(jwk[i], []);
+        const id = base64ToByteArray(jwk[i].kid, true);
         const encId = byteArrayToBase64(id, true);
-        bckpKeys.push(new BackupKey(parsedKey, encId));
+        const bckpKey = new BackupKey(parsedKey, encId);
+        const expBckpKey = await bckpKey.export();
+        container.push(expBckpKey);
     }
-    log.info("Loaded backup keys", bckpKeys);
-    await storePSKKeys(BACKUP, bckpKeys);
+    log.debug('Loaded backup keys', container);
+
+    await saveExportContainer(BACKUP, container);
 }
 
 export async function syncDelegation (content) {
-    let rawDelegations = JSON.parse(content);
+    const rawDelegations = JSON.parse(content);
     let i;
-    let del = new Array<Delegation>()
+    const container = new Array<ExportContainer>();
     for (i = 0; i < rawDelegations.length; ++i) {
-        let sign = rawDelegations[i].signature;
-        let bId = base64ToByteArray(rawDelegations[i].cred_id, true);
+        const sign = rawDelegations[i].signature;
+        const bId = base64ToByteArray(rawDelegations[i].cred_id, true);
         const encBId = byteArrayToBase64(bId, true);
-        del.push(new Delegation(sign, encBId, rawDelegations[i].public_key));
+        const del = new Delegation(sign, encBId, rawDelegations[i].public_key);
+        container.push(del.export());
     }
-    log.info("Loaded delegation", del);
-    await storeDelegations(del);
+    log.debug("Loaded delegation", container);
+    await saveExportContainer(DELEGATION, container);
 }
 
-class PSKKey {
+export class ExportContainer {
+    id: string;
+    payload: string;
+
+    constructor(id: string, payload: string) {
+        this.id = id;
+        this.payload = payload;
+    }
+}
+
+export class BackupKey {
     key: CryptoKey;
     id: string;
+
     constructor(key: CryptoKey, id: string) {
         this.key = key;
         this.id = id;
     }
+
+    async export(): Promise<ExportContainer> {
+        const jwk = await window.crypto.subtle.exportKey("jwk", this.key);
+        const encJWK = JSON.stringify(jwk);
+        return new ExportContainer(this.id, encJWK);
+    }
+    static async import(kx: ExportContainer): Promise<BackupKey> {
+        const rawKey = JSON.parse(kx.payload);
+        const key = await parseJWK(rawKey, []);
+        return new BackupKey(key, kx.id);
+    }
 }
 
-class ExportKey {
-    key: JsonWebKey;
+export class RecoveryKey {
+    key: CryptoKey;
     id: string;
-    constructor(key: JsonWebKey, id: string) {
+    backupKey: BackupKey;
+
+    constructor(key: CryptoKey, backupKey: BackupKey) {
+        this.id = backupKey.id;
+        this.backupKey = backupKey;
         this.key = key;
-        this.id = id;
+    }
+
+    async export(): Promise<ExportContainer> {
+        const parsedKey = await window.crypto.subtle.exportKey("jwk", this.key);
+        const expBackupKey = await this.backupKey.export();
+        const rawJSON = {parsedKey: parsedKey, parsedBackupKey: expBackupKey};
+
+        return new ExportContainer(this.id, JSON.stringify(rawJSON));
+    }
+
+    static async import(kx: ExportContainer): Promise<RecoveryKey> {
+        const json = JSON.parse(kx.payload);
+        const key = await parseJWK(json.parsedKey, ['sign']);
+        const backupKey = await BackupKey.import(json.parsedBackupKey);
+
+        return new RecoveryKey(key, backupKey);
     }
 }
 
-export class BackupKey extends PSKKey {
-}
+class Delegation {
+    signature: string;
+    backupId: string;
+    replacementId: string;
+    replacementKey: JsonWebKey;
+    constructor(sign, backupId, jwk) {
+        this.backupId = backupId;
+        this.signature = sign;
+        this.replacementId = jwk.kid;
+        this.replacementKey = jwk;
+    }
 
-export class RecoveryKey extends PSKKey {
-    constructor(key: CryptoKey) {
-        super(key, createId());
+    export(): ExportContainer {
+        return new ExportContainer(this.backupId,  JSON.stringify(this));
+    }
+    static import(kx: ExportContainer): Delegation {
+        return JSON.parse(kx.payload);
     }
 }
 
-class RecoveryMessage {
+class RecoveryMessage { // ToDo Clean up
     backupCredId: string;
     delegationSignature: Uint8Array;
     pubKey: Uint8Array;
@@ -77,18 +135,21 @@ class RecoveryMessage {
         // Dummy
     }
 
+    // ToDo Irgendwie ist der PubKey der in der RP registriert wird, nicht der PuBkey der im Plugin genutzt wird
     async init(delegation: Delegation, rkPub: ICOSECompatibleKey, origin: string, challenge: ArrayBuffer) {
         this.backupCredId = delegation.backupId;
         this.delegationSignature = base64ToByteArray(delegation.signature, true);
 
         // Create attestation object for new key
-        const recoveryCredId = base64ToByteArray(delegation.replacementId);
+        const recoveryCredId = base64ToByteArray(delegation.replacementId, true); // ToDo Irgenwie wird jetzt true gebraucht, obwohl vorher doch auch Base64 war? --> Das macht vlt attestation kapput?
 
         // ToDo New Credential should also contain recovery key
+        log.debug('init: delegation.replacementId', delegation.replacementId);
         const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, null);
         log.debug('AuthData of recovery message', authData);
 
         const coseKey = await rkPub.toCOSE(rkPub.publicKey);
+        log.debug('init: coseKey', rkPub.publicKey);
         this.pubKey = new Uint8Array(CBOR.encode(coseKey));
 
         this.attestationObject = CBOR.encodeCanonical({
@@ -99,7 +160,7 @@ class RecoveryMessage {
 
 
         const clientData = await rkPub.generateClientData(
-         challenge,
+            challenge,
             { origin, type: 'webauthn.create' },
         );
         this.clientDataJSON = base64ToByteArray(window.btoa(clientData), true);
@@ -119,19 +180,6 @@ class RecoveryMessage {
     }
 }
 
-class Delegation {
-    signature: string;
-    backupId: string;
-    replacementId: string;
-    replacementKey: JsonWebKey;
-    constructor(sign, backupId, jwk) {
-        this.backupId = backupId;
-        this.signature = sign;
-        this.replacementId = jwk.kid;
-        this.replacementKey = jwk;
-    }
-}
-
 async function parseJWK(jwk, usages): Promise<CryptoKey> {
     return window.crypto.subtle.importKey(
         "jwk",
@@ -145,97 +193,16 @@ async function parseJWK(jwk, usages): Promise<CryptoKey> {
     );
 }
 
-
-
-async function storePSKKeys(identifier: string, psk: Array<PSKKey>): Promise<void> {
-    let exportKeys = new Array<ExportKey>();
-    let i;
-    for (i = 0; i < psk.length; ++i) {
-        let parsedKey = await window.crypto.subtle.exportKey("jwk", psk[i].key);
-        exportKeys.push(new ExportKey(parsedKey, psk[i].id));
+export async function getBackupKey(): Promise<BackupKey> {
+    const container = await fetchExportContainer(BACKUP);
+    if (container.length == 0) {
+        throw new Error(`No backup key available`);
     }
-    let pskJSON = JSON.stringify(exportKeys);
+    const key = container.pop();
+    await saveExportContainer(BACKUP, container);
+    log.debug(`${container.length} backup keys left`);
 
-    log.debug(`Storing ${identifier} keys`, pskJSON);
-
-    return new Promise<void>(async (res, rej) => {
-        chrome.storage.sync.set({ [identifier]: pskJSON }, () => {
-            if (!!chrome.runtime.lastError) {
-                log.warn(`Could not store ${identifier} keys`, pskJSON);
-                rej(chrome.runtime.lastError);
-            } else {
-                res();
-            }
-        });
-    });
-}
-
-async function storeDelegations(del: Array<Delegation>): Promise<void> {
-    let delJSON = JSON.stringify(del);
-
-    log.debug(`Storing ${DELEGATION}`, delJSON);
-
-    return new Promise<void>(async (res, rej) => {
-        chrome.storage.sync.set({ [DELEGATION]: delJSON }, () => {
-            if (!!chrome.runtime.lastError) {
-                log.warn(`Could not store ${DELEGATION}`, del);
-                rej(chrome.runtime.lastError);
-            } else {
-                res();
-            }
-        });
-    });
-}
-
-async function fetchPSKKeys(identifier: string, usages): Promise<Array<PSKKey>> {
-        return new Promise<Array<PSKKey>>(async (res, rej) => {
-            chrome.storage.sync.get(identifier, async (resp) => {
-                if (!!chrome.runtime.lastError) {
-                    log.warn(`Could not fetch ${identifier} keys`);
-                    rej(chrome.runtime.lastError);
-                    return;
-                }
-
-                let exportedKey = await JSON.parse(resp[identifier]);
-                let pskKeys = new Array<PSKKey>();
-                let i;
-                for (i = 0; i < exportedKey.length; ++i) {
-                    let parsedKey = await parseJWK(exportedKey[i].key, usages);
-                    pskKeys.push(new PSKKey(parsedKey, exportedKey[i].id));
-                }
-                res(pskKeys);
-            });
-        });
-}
-
-async function fetchDelegations(): Promise<Array<Delegation>> {
-    return new Promise<Array<Delegation>>(async (res, rej) => {
-        chrome.storage.sync.get(DELEGATION, async (resp) => {
-            if (!!chrome.runtime.lastError) {
-                log.warn(`Could not fetch ${DELEGATION}`);
-                rej(chrome.runtime.lastError);
-                return;
-            }
-
-            let delegations = await JSON.parse(resp[DELEGATION]);
-            res(delegations);
-        });
-    });
-}
-
-async function popPSKKey(identifier: string, usages): Promise<PSKKey> {
-    let pskKeys = await fetchPSKKeys(identifier, usages);
-    if (pskKeys.length == 0) {
-        throw new Error(`No ${identifier} key available to pop`);
-    }
-    let key = pskKeys.pop();
-    await storePSKKeys(identifier, pskKeys)
-    log.info(`${pskKeys.length} ${identifier} keys left`);
-    return key;
-}
-
-export async function popBackupKey(): Promise<BackupKey> {
-    return popPSKKey(BACKUP, []);
+    return await BackupKey.import(key);
 }
 
 export async function pskSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
@@ -255,24 +222,26 @@ async function pskRecoveryExtensionOutput(recMsg: RecoveryMessage): Promise<Uint
 }
 
 export async function createRecoveryKeys(n: number) {
-    let rcvKeys = new Array<RecoveryKey>();
-    let jwk = new Array<JsonWebKey>();
+    const jwk = new Array<JsonWebKey>();
+    const container = new Array<ExportContainer>();
     let i;
     for (i = 0; i < n; ++i) {
-        let keyPair = await window.crypto.subtle.generateKey(
+        const keyPair = await window.crypto.subtle.generateKey(
             { name: 'ECDSA', namedCurve: "P-256" },
             true,
             ['sign'],
         );
-        let rk = new RecoveryKey(keyPair.privateKey)
-        let expKey: any = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
-        expKey.kid = rk.id;
+        const bckKey = await getBackupKey();
+        const rk = new RecoveryKey(keyPair.privateKey, bckKey);
+        const exportRk = await rk.export();
+        const keyJWK: any = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
+        keyJWK.kid = rk.id;
 
-        rcvKeys.push(rk);
-        jwk.push(expKey);
+        container.push(exportRk);
+        jwk.push(keyJWK);
     }
 
-    await storePSKKeys(RECOVERY, rcvKeys);
+    await saveExportContainer(RECOVERY, container);
 
     // Download recovery public keys as file
     let json = [JSON.stringify(jwk)];
@@ -289,28 +258,17 @@ export async function createRecoveryKeys(n: number) {
 }
 
 async function getDelegation(credentialId: string): Promise<Delegation> {
-    const del = await fetchDelegations();
-    log.debug('Fetched delegations', del);
-    const rec = del.filter(x => x.backupId === credentialId);
-    return rec.length != 0 ? rec[0] : null;
+    const container = await fetchExportContainer(DELEGATION);
+    log.debug('Fetched delegations', container);
+    const del = container.filter(x => x.id === credentialId);
+    return del.length != 0 ? (Delegation.import(del[0])) : null;
 }
 
 async function getRecoveryKey(credentialId: string): Promise<RecoveryKey> {
-    const rks = await fetchPSKKeys(RECOVERY, ['sign']);
-    log.debug(rks);
-    const rk = rks.filter(x => x.id === credentialId);
-    return rk.length != 0 ? rk[0] : null;
-}
-
-function createId(): string{
-    let enc =  new TextEncoder();
-    let dt = new Date().getTime();
-    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = (dt + Math.random()*16)%16 | 0;
-        dt = Math.floor(dt/16);
-        return (c=='x' ? r :(r&0x3|0x8)).toString(16);
-    });
-    return byteArrayToBase64(enc.encode(uuid), true);
+    const container = await fetchExportContainer(RECOVERY);
+    log.debug(container);
+    const rk = container.filter(x => x.id === credentialId);
+    return rk.length != 0 ? (await RecoveryKey.import(rk[0])) : null;
 }
 
 class RecoveryOptions {
@@ -343,9 +301,6 @@ export const recover = async (
         return null;
     }
 
-    //origin = 'http://localhost:9005'; // Given origin does not work!
-    log.debug('origin', origin)
-
     // For now we will only worry about the first entry
     const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
     const backupCredId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
@@ -355,18 +310,19 @@ export const recover = async (
     const recOps = await getRecoveryOptions(encBackupCredId);
     log.debug('Recovery options', recOps);
 
+    const credId = base64ToByteArray(recOps.recoveryKey.id, true);
+    const encCredId = byteArrayToBase64(credId, true);
+
     const rkPrv = await getCompatibleKeyFromCryptoKey(recOps.recoveryKey.key);
-    log.debug('prv', rkPrv.privateKey);
     const rkPubRaw = await parseJWK(recOps.delegation.replacementKey, []);
     const rkPub = await getCompatibleKeyFromCryptoKey(rkPubRaw);
-    log.debug('pub', rkPub.publicKey);
 
     const recMessage = new RecoveryMessage();
     await recMessage.init(recOps.delegation, rkPub, origin, publicKeyRequestOptions.challenge as ArrayBuffer);
     log.debug('Recovery message', recMessage);
     const extOutput = await pskRecoveryExtensionOutput(recMessage);
 
-    await saveKey(recOps.recoveryKey.id, rkPrv.privateKey, pin);
+    await saveKey(encCredId, rkPrv.privateKey, pin);
 
     const clientData = await rkPrv.generateClientData(
         publicKeyRequestOptions.challenge as ArrayBuffer,
@@ -390,9 +346,11 @@ export const recover = async (
     concatData.set(clientDataHash, authenticatorData.length);
 
     const signature = await rkPrv.sign(concatData);
+    log.debug(clientData);
+
     return { // ToDo Make getClientExtensionResults work
-        id: recOps.recoveryKey.id,
-        rawId: base64ToByteArray(recOps.recoveryKey.id, true),
+        id: encCredId,
+        rawId: credId,
         response: {
             authenticatorData: authenticatorData.buffer,
             clientDataJSON: clientDataJSON,
