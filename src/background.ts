@@ -2,7 +2,7 @@ import {disabledIcons, enabledIcons} from './constants';
 import {getLogger} from './logging';
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 import {processCredentialRequest, processCredentialCreation} from './webauthn';
-import {createRecoveryKeys, syncBackupKeys, syncDelegation} from "./recovery";
+import {RecoveryKey, syncBackupKeys, syncDelegation} from "./recovery";
 
 const log = getLogger('background');
 
@@ -35,21 +35,21 @@ const requestPin = async (tabId: number, origin: string, newPin: boolean = true)
 };
 
 const syncBackup = async (backupContent) => {
-    console.log('Sync Backup called');
+    log.debug('Sync Backup called');
 
     await syncBackupKeys(backupContent);
 };
 
 const syncDel = async (delegationContent) => {
-    console.log('Sync Delegation called');
+    log.debug('Sync Delegation called');
 
     await syncDelegation(delegationContent);
 };
 
 const recovery = async (n) => {
-    console.log('Create recovery keys called')
+    log.debug('Create recovery keys called')
 
-    await createRecoveryKeys(n);
+    await RecoveryKey.generate(n);
 }
 
 const create = async (msg, sender: chrome.runtime.MessageSender) => {

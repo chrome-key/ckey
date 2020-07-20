@@ -4,9 +4,9 @@ import { getLogger } from './logging';
 import { fetchKey, keyExists, saveKey } from './storage';
 import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
 import {
-    getBackupKey,
+    BackupKey,
     PSK,
-    pskSetupExtensionOutput, recover,
+    createPSKSetupExtensionOutput, recover,
 } from "./recovery";
 
 const log = getLogger('webauthn');
@@ -34,7 +34,7 @@ export const processCredentialCreation = async (
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
 
-    let bckpKey = await getBackupKey();
+    let bckpKey = await BackupKey.get();
     log.info('Use backup key', bckpKey);
 
     const credId = base64ToByteArray(bckpKey.id, true);
@@ -48,7 +48,7 @@ export const processCredentialCreation = async (
 
     let extOutput = null;
     if (supportRecovery) {
-        extOutput = await pskSetupExtensionOutput(bckpKey);
+        extOutput = await createPSKSetupExtensionOutput(bckpKey);
     }
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credId, extOutput);
 
