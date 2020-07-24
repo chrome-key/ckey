@@ -189,15 +189,15 @@ class RecoveryMessage {
         // Dummy
     }
 
-    async init(delegation: Delegation, rkPub: ICOSECompatibleKey, origin: string, challenge: ArrayBuffer) {
+    async init(delegation: Delegation, rkPub: ICOSECompatibleKey, backupKey: BackupKey, origin: string, challenge: ArrayBuffer) {
         this.srcCredId = delegation.srcCredId;
         this.delSign = base64ToByteArray(delegation.sign, true);
 
         // Create attestation object for new key
         const recoveryCredId = base64ToByteArray(delegation.rkId, true);
 
-        // ToDo New Credential should also contain backup key
-        const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, null);
+        const pskExtOutput = await createPSKSetupExtensionOutput(backupKey);
+        const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, pskExtOutput);
 
         const coseKey = await rkPub.toCOSE(rkPub.publicKey);
         this.pubRK = new Uint8Array(CBOR.encode(coseKey));
@@ -307,18 +307,18 @@ export const recover = async (
     const rkId = base64ToByteArray(recOps.rk.id, true);
     const encRkId = byteArrayToBase64(rkId, true);
 
-    const prvRK = await getCompatibleKeyFromCryptoKey(recOps.rk.key);
-    const rawPubRK = await parseJWK(recOps.del.pubRK, []);
-    const pubRK = await getCompatibleKeyFromCryptoKey(rawPubRK);
+    const rkPrv = await getCompatibleKeyFromCryptoKey(recOps.rk.key);
+    const rawRKPub = await parseJWK(recOps.del.pubRK, []);
+    const rkPub = await getCompatibleKeyFromCryptoKey(rawRKPub);
 
     const recMessage = new RecoveryMessage();
-    await recMessage.init(recOps.del, pubRK, origin, publicKeyRequestOptions.challenge as ArrayBuffer);
+    await recMessage.init(recOps.del, rkPub, recOps.rk.backupKey, origin, publicKeyRequestOptions.challenge as ArrayBuffer);
     log.debug('Recovery message', recMessage);
     const extOutput = await createPSKRecoveryExtensionOutput(recMessage);
 
-    await saveKey(encRkId, prvRK.privateKey, pin);
+    await saveKey(encRkId, rkPrv.privateKey, pin);
 
-    const clientData = await prvRK.generateClientData(
+    const clientData = await rkPrv.generateClientData(
         publicKeyRequestOptions.challenge as ArrayBuffer,
         {
             origin,
@@ -333,13 +333,13 @@ export const recover = async (
 
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
 
-    const authenticatorData = await prvRK.generateAuthenticatorData(rpID, 0, new Uint8Array(), new Uint8Array(extOutput));
+    const authenticatorData = await rkPrv.generateAuthenticatorData(rpID, 0, new Uint8Array(), new Uint8Array(extOutput));
 
     const concatData = new Uint8Array(authenticatorData.length + clientDataHash.length);
     concatData.set(authenticatorData);
     concatData.set(clientDataHash, authenticatorData.length);
 
-    const signature = await prvRK.sign(concatData);
+    const signature = await rkPrv.sign(concatData);
 
     return { // ToDo Make getClientExtensionResults work
         id: encRkId,
