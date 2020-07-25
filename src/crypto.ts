@@ -108,7 +108,7 @@ class ECDSA implements ICOSECompatibleKey {
             credIdLen[0] = (credentialId.length >> 8) & 0xff;
             credIdLen[1] = credentialId.length & 0xff;
             const coseKey = await this.toCOSE(this.publicKey);
-            encodedKey = new Uint8Array(CBOR.encode(coseKey));
+            encodedKey = new Uint8Array(CBOR.encodeCanonical(coseKey));
             authenticatorDataLength += aaguid.length
                 + credIdLen.length
                 + credentialId.length
