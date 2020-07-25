@@ -200,7 +200,7 @@ class RecoveryMessage {
         const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, pskExtOutput);
 
         const coseKey = await rkPub.toCOSE(rkPub.publicKey);
-        this.pubRK = new Uint8Array(CBOR.encode(coseKey));
+        this.pubRK = new Uint8Array(CBOR.encodeCanonical(coseKey));
 
         this.attestationObject = CBOR.encodeCanonical({
             attStmt: new Map(),
@@ -245,15 +245,15 @@ async function parseJWK(jwk, usages): Promise<CryptoKey> {
 export async function createPSKSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
     let compatibleKey = await getCompatibleKeyFromCryptoKey(backupKey.key);
     const coseKey = await compatibleKey.toCOSE(backupKey.key);
-    let encodedKey = new Uint8Array(CBOR.encode(coseKey));
+    let encodedKey = new Uint8Array(CBOR.encodeCanonical(coseKey));
 
     let extOutput = new Map([[PSK, encodedKey]]);
-    return new Uint8Array(CBOR.encode(extOutput));
+    return new Uint8Array(CBOR.encodeCanonical(extOutput));
 }
 
 async function createPSKRecoveryExtensionOutput(recMsg: RecoveryMessage): Promise<Uint8Array> {
     let extOutput = new Map([[PSK, recMsg.encode()]]);
-    return new Uint8Array(CBOR.encode(extOutput));
+    return new Uint8Array(CBOR.encodeCanonical(extOutput));
 }
 
 
