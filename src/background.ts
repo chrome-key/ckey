@@ -2,7 +2,8 @@ import {disabledIcons, enabledIcons} from './constants';
 import {getLogger} from './logging';
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 import {processCredentialRequest, processCredentialCreation} from './webauthn';
-import {RecoveryKey, syncBackupKeys, syncDelegation} from "./recovery";
+import {BackupDeviceBaseUrl, RecoveryKey, pskSetup, pskRecovery} from "./recovery";
+import * as axios from 'axios';
 
 const log = getLogger('background');
 
@@ -34,22 +35,14 @@ const requestPin = async (tabId: number, origin: string, newPin: boolean = true)
     return pin;
 };
 
-const syncBackup = async (backupContent) => {
-    log.debug('Sync Backup called');
-
-    await syncBackupKeys(backupContent);
+const setup = async () => {
+    log.debug('Setup called');
+    await pskSetup();
 };
 
-const syncDel = async (delegationContent) => {
-    log.debug('Sync Delegation called');
-
-    await syncDelegation(delegationContent);
-};
-
-const recovery = async (n) => {
-    log.debug('Create recovery keys called')
-
-    await RecoveryKey.generate(n);
+const recovery = async () => {
+    log.debug('Recovery called!')
+    await pskRecovery();
 }
 
 const create = async (msg, sender: chrome.runtime.MessageSender) => {
@@ -122,14 +115,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 delete (pinProtectedCallbacks[msg.tabId]);
             }
             break;
-        case 'syncBackup':
-            syncBackup(msg.backup).then(() => alert("Backup file processed"));
-            break;
-        case 'syncDelegation':
-            syncDel(msg.delegation).then(() => alert("Delegation file processed"));
+        case 'setup':
+            setup().then(() => alert("Backup keys synchronized successfully!"));
             break;
         case 'recovery':
-            recovery(msg.amount).then(() => alert("Creating recovery keys finished"))
+            recovery().then(() => alert("Recovery finished successfully!"))
             break;
         default:
             sendResponse(null);

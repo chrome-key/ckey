@@ -11,54 +11,16 @@ $(() => {
             return;
         }
 
-        $('#delegationFile').on('change', function(evt: Event) {
-            const files =  (<HTMLInputElement>evt.target).files; // FileList object
-
-            // use the 1st file from the list
-            const f = files[0];
-
-            const reader = new FileReader();
-
-            // Closure to capture the file information.
-            reader.onload = (function(theFile) {
-                return function(e) {
-                    chrome.runtime.sendMessage({
-                        delegation: e.target.result,
-                        type: 'syncDelegation',
-                    });
-                };
-            })(f);
-
-            // Read in the image file as a data URL.
-            reader.readAsText(f);
-        });
-        $('#backupFile').on('change', function(evt: Event) {
-            evt.preventDefault();
-            const files =  (<HTMLInputElement>evt.target).files; // FileList object
-
-            // use the 1st file from the list
-            const f = files[0];
-
-            const reader = new FileReader();
-
-            // Closure to capture the file information.
-            reader.onload = (function(theFile) {
-                return function(e) {
-                    chrome.runtime.sendMessage({
-                        backup: e.target.result,
-                        type: 'syncBackup',
-                    });
-                };
-            })(f);
-
-            // Read in the image file as a data URL.
-            reader.readAsText(f);
-        });
-
-        $('#recovery').on('click', function(evt: Event) {
+        $('#Setup').on('click', function(evt: Event) {
             evt.preventDefault();
             chrome.runtime.sendMessage({
-                amount: 5, // ToDo Read real input
+                type: 'setup',
+            });
+        });
+
+        $('#Recovery').on('click', function(evt: Event) {
+            evt.preventDefault();
+            chrome.runtime.sendMessage({
                 type: 'recovery',
             });
         });

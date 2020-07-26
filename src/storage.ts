@@ -99,6 +99,7 @@ export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => 
             if (resp[key] == null) {
                 return rej("Key not found");
             }
+            log.info('PIN', pin);
             const payload = base64ToByteArray(resp[key]);
             const saltByteLength = payload[0];
             const ivByteLength = payload[1];

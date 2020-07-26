@@ -3,46 +3,80 @@ import {getLogger} from './logging';
 import {getCompatibleKeyFromCryptoKey, ICOSECompatibleKey} from './crypto';
 import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from './utils';
 import {fetchExportContainer, saveExportContainer, saveKey} from './storage';
+import * as axios from "axios";
 
 const log = getLogger('recovery');
 
 export const PSK: string = 'psk'
+
+export const BackupDeviceBaseUrl = 'http://localhost:8005' // ToDo Load from a config file
 
 export type ExportContainerType = string
 const BACKUP: ExportContainerType = 'backup'
 const RECOVERY: ExportContainerType = 'recovery'
 const DELEGATION: ExportContainerType = 'delegation'
 
-export async function syncBackupKeys (content) {
-    const jwk = JSON.parse(content);
-    let i;
-    const container = new Array<ExportContainer>();
-    for (i = 0; i < jwk.length; ++i) {
-        const parsedKey = await parseJWK(jwk[i], []);
-        const id = base64ToByteArray(jwk[i].kid, true);
-        const encId = byteArrayToBase64(id, true);
-        const bckpKey = new BackupKey(parsedKey, encId);
-        const expBckpKey = await bckpKey.export();
-        container.push(expBckpKey);
-    }
-    log.debug('Loaded backup keys', container);
+export async function pskSetup () {
+    const authId = prompt("Please enter a name for your authenticator", "MyAuth");
+    const keyAmount: number = +prompt("How many backup keys should be created?", "5");
 
-    await saveExportContainer(BACKUP, container);
+    await axios.default.post(BackupDeviceBaseUrl  + '/setup', {auth_id: authId, key_amount: keyAmount})
+        .then(async function (response) {
+            log.debug(response)
+            const jwk = response.data;
+            let i;
+            const container = new Array<ExportContainer>();
+            for (i = 0; i < jwk.length; ++i) {
+                const parsedKey = await parseJWK(jwk[i], []);
+                const id = base64ToByteArray(jwk[i].kid, true);
+                const encId = byteArrayToBase64(id, true);
+                const bckpKey = new BackupKey(parsedKey, encId);
+                const expBckpKey = await bckpKey.export();
+                container.push(expBckpKey);
+            }
+            log.debug('Loaded backup keys', container);
+
+            await saveExportContainer(BACKUP, container);
+        })
+        .catch(function (error) {
+            log.error(error);
+        })
 }
 
-export async function syncDelegation (content) {
-    const rawDelegations = JSON.parse(content);
-    let i;
-    const container = new Array<ExportContainer>();
-    for (i = 0; i < rawDelegations.length; ++i) {
-        const sign = rawDelegations[i].sign;
-        const srcCredId = base64ToByteArray(rawDelegations[i].src_cred_id, true);
-        const encSrcCredId = byteArrayToBase64(srcCredId, true);
-        const del = new Delegation(sign, encSrcCredId, rawDelegations[i].pub_rk);
-        container.push(del.export());
-    }
-    log.debug("Loaded delegation", container);
-    await saveExportContainer(DELEGATION, container);
+export async function pskRecovery () {
+    const authId = prompt("Which authenticator you want to replace?", "MyAuth");
+
+    await axios.default.get(BackupDeviceBaseUrl  + '/recovery?authId=' + authId)
+        .then(async function (response1) {
+            log.debug(response1);
+            const keyAmount = response1.data.key_amount;
+
+            const rkPub = await RecoveryKey.generate(keyAmount);
+
+            await axios.default.post(BackupDeviceBaseUrl  + '/recovery', {recovery_keys: rkPub, auth_id: authId})
+                .then(async function (response2) {
+                    log.debug(response2);
+                    const rawDelegations = response2.data;
+
+                    let i;
+                    const container = new Array<ExportContainer>();
+                    for (i = 0; i < rawDelegations.length; ++i) {
+                        const sign = rawDelegations[i].sign;
+                        const srcCredId = base64ToByteArray(rawDelegations[i].src_cred_id, true);
+                        const encSrcCredId = byteArrayToBase64(srcCredId, true);
+                        const del = new Delegation(sign, encSrcCredId, rawDelegations[i].pub_rk);
+                        container.push(del.export());
+                    }
+                    log.debug("Loaded delegation", container);
+                    await saveExportContainer(DELEGATION, container);
+                })
+                .catch(function (error) {
+                    log.error(error);
+                })
+        })
+        .catch(function (error) {
+            log.error(error);
+        })
 }
 
 export class ExportContainer {
@@ -115,7 +149,7 @@ export class RecoveryKey {
         return new RecoveryKey(key, backupKey);
     }
 
-    static async generate(n: number) {
+    static async generate(n: number): Promise<Array<JsonWebKey>> {
         const jwk = new Array<JsonWebKey>();
         const container = new Array<ExportContainer>();
         let i;
@@ -137,17 +171,7 @@ export class RecoveryKey {
 
         await saveExportContainer(RECOVERY, container);
 
-        // Download recovery public keys as file
-        let json = [JSON.stringify(jwk)];
-        let blob1 = new Blob(json, { type: "text/plain;charset=utf-8" });
-        let link = (window.URL ? URL : webkitURL).createObjectURL(blob1);
-        let a = document.createElement("a");
-        a.download = "recoveryKeys.json";
-        a.href = link;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        log.debug("Downloading recovery keys completed");
+        return jwk;
     }
 }
 

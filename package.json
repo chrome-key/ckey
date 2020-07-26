@@ -30,6 +30,7 @@
         "@types/loglevel": "^1.6.3",
         "@types/webappsec-credential-management": "^0.3.11",
         "asn1js": "^2.0.26",
+        "axios": "^0.19.2",
         "bn.js": "^5.1.2",
         "cbor": "^4.3.0",
         "elliptic": "^6.5.3",
