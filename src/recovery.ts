@@ -23,14 +23,16 @@ export async function pskSetup () {
     await axios.default.post(BackupDeviceBaseUrl  + '/setup', {auth_id: authId, key_amount: keyAmount})
         .then(async function (response) {
             log.debug(response)
-            const jwk = response.data;
+            const stpRsp = response.data;
             let i;
             const container = new Array<ExportContainer>();
-            for (i = 0; i < jwk.length; ++i) {
-                const parsedKey = await parseJWK(jwk[i], []);
-                const id = base64ToByteArray(jwk[i].kid, true);
+            for (i = 0; i < stpRsp.length; ++i) {
+                const jwk = stpRsp[i].jwk;
+                const attObj = stpRsp[i].att_obj;
+                const parsedKey = await parseJWK(jwk, []);
+                const id = base64ToByteArray(jwk.kid, true);
                 const encId = byteArrayToBase64(id, true);
-                const bckpKey = new BackupKey(parsedKey, encId);
+                const bckpKey = new BackupKey(parsedKey, encId, attObj);
                 const expBckpKey = await bckpKey.export();
                 container.push(expBckpKey);
             }
@@ -91,22 +93,24 @@ export class ExportContainer {
 
 export class BackupKey {
     key: CryptoKey;
+    attObj: string;
     id: string;
 
-    constructor(key: CryptoKey, id: string) {
+    constructor(key: CryptoKey, id: string, attObj: string) {
         this.key = key;
         this.id = id;
+        this.attObj = attObj;
     }
 
     async export(): Promise<ExportContainer> {
         const jwk = await window.crypto.subtle.exportKey("jwk", this.key);
-        const encJWK = JSON.stringify(jwk);
-        return new ExportContainer(this.id, encJWK);
+        const rawJSON = {parsedKey: jwk, attObj: this.attObj};
+        return new ExportContainer(this.id, JSON.stringify(rawJSON));
     }
     static async import(kx: ExportContainer): Promise<BackupKey> {
-        const rawKey = JSON.parse(kx.payload);
-        const key = await parseJWK(rawKey, []);
-        return new BackupKey(key, kx.id);
+        const json = JSON.parse(kx.payload);
+        const key = await parseJWK(json.parsedKey, []);
+        return new BackupKey(key, kx.id, json.attObj);
     }
 
     static async get(): Promise<BackupKey> {
@@ -267,11 +271,8 @@ async function parseJWK(jwk, usages): Promise<CryptoKey> {
 }
 
 export async function createPSKSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
-    let compatibleKey = await getCompatibleKeyFromCryptoKey(backupKey.key);
-    const coseKey = await compatibleKey.toCOSE(backupKey.key);
-    let encodedKey = new Uint8Array(CBOR.encodeCanonical(coseKey));
-
-    let extOutput = new Map([[PSK, encodedKey]]);
+    let stpMsg = CBOR.encodeCanonical({att_obj: backupKey.attObj});
+    let extOutput = new Map([[PSK, stpMsg]]);
     return new Uint8Array(CBOR.encodeCanonical(extOutput));
 }
 
@@ -365,7 +366,8 @@ export const recover = async (
 
     const signature = await rkPrv.sign(concatData);
 
-    return { // ToDo Make getClientExtensionResults work
+    return {
+        getClientExtensionResults: () => ({}),
         id: encRkId,
         rawId: rkId,
         response: {
@@ -375,5 +377,5 @@ export const recover = async (
             userHandle: new ArrayBuffer(0), // This should be nullable
         },
         type: 'public-key',
-    } as Credential;
+    } as PublicKeyCredential;
 };

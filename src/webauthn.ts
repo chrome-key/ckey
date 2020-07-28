@@ -53,7 +53,6 @@ export const processCredentialCreation = async (
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credId, extOutput);
 
     // ToDo Add support for credential counter
-
     const clientData = await compatibleKey.generateClientData(
         publicKeyCreationOptions.challenge as ArrayBuffer,
         { origin, type: 'webauthn.create' },
@@ -70,7 +69,7 @@ export const processCredentialCreation = async (
     log.debug('Attestation created');
 
     return {
-        getClientExtensionResults: () => ({}), // ToDo Put PSK extension data
+        getClientExtensionResults: () => ({}),
         id: encCredId,
         rawId: credId,
         response: {
@@ -137,6 +136,7 @@ export const processCredentialRequest = async (
     log.debug('clientData', clientData);
 
     return {
+        getClientExtensionResults: () => ({}),
         id: encCredId,
         rawId: credId,
         response: {
@@ -146,5 +146,5 @@ export const processCredentialRequest = async (
             userHandle: new ArrayBuffer(0),
         },
         type: 'public-key',
-    } as Credential;
+    } as PublicKeyCredential;
 };
