@@ -104,6 +104,7 @@ export class BackupKey {
 
     async export(): Promise<ExportContainer> {
         const jwk = await window.crypto.subtle.exportKey("jwk", this.key);
+        log.debug('Encoded x: ', jwk.x);
         const rawJSON = {parsedKey: jwk, attObj: this.attObj};
         return new ExportContainer(this.id, JSON.stringify(rawJSON));
     }
@@ -271,7 +272,7 @@ async function parseJWK(jwk, usages): Promise<CryptoKey> {
 }
 
 export async function createPSKSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
-    let stpMsg = CBOR.encodeCanonical({att_obj: backupKey.attObj});
+    let stpMsg = CBOR.encodeCanonical({att_obj: base64ToByteArray(backupKey.attObj, true)});
     let extOutput = new Map([[PSK, stpMsg]]);
     return new Uint8Array(CBOR.encodeCanonical(extOutput));
 }
