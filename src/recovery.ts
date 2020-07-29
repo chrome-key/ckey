@@ -20,7 +20,7 @@ export async function pskSetup () {
     const authId = prompt("Please enter a name for your authenticator", "MyAuth");
     const keyAmount: number = +prompt("How many backup keys should be created?", "5");
 
-    await axios.default.post(BackupDeviceBaseUrl  + '/setup', {auth_id: authId, key_amount: keyAmount})
+    await axios.default.post(BackupDeviceBaseUrl  + '/setup', {authId: authId, keyAmount: keyAmount})
         .then(async function (response) {
             log.debug(response)
             const stpRsp = response.data;
@@ -28,7 +28,7 @@ export async function pskSetup () {
             const container = new Array<ExportContainer>();
             for (i = 0; i < stpRsp.length; ++i) {
                 const jwk = stpRsp[i].jwk;
-                const attObj = stpRsp[i].att_obj;
+                const attObj = stpRsp[i].attObj;
                 const parsedKey = await parseJWK(jwk, []);
                 const id = base64ToByteArray(jwk.kid, true);
                 const encId = byteArrayToBase64(id, true);
@@ -51,11 +51,11 @@ export async function pskRecovery () {
     await axios.default.get(BackupDeviceBaseUrl  + '/recovery?authId=' + authId)
         .then(async function (response1) {
             log.debug(response1);
-            const keyAmount = response1.data.key_amount;
+            const keyAmount = response1.data.keyAmount;
 
             const rkPub = await RecoveryKey.generate(keyAmount);
 
-            await axios.default.post(BackupDeviceBaseUrl  + '/recovery', {recovery_keys: rkPub, auth_id: authId})
+            await axios.default.post(BackupDeviceBaseUrl  + '/recovery', {recoveryKeys: rkPub, authId: authId})
                 .then(async function (response2) {
                     log.debug(response2);
                     const rawDelegations = response2.data;
@@ -64,9 +64,9 @@ export async function pskRecovery () {
                     const container = new Array<ExportContainer>();
                     for (i = 0; i < rawDelegations.length; ++i) {
                         const sign = rawDelegations[i].sign;
-                        const srcCredId = base64ToByteArray(rawDelegations[i].src_cred_id, true);
+                        const srcCredId = base64ToByteArray(rawDelegations[i].srcCredId, true);
                         const encSrcCredId = byteArrayToBase64(srcCredId, true);
-                        const del = new Delegation(sign, encSrcCredId, rawDelegations[i].pub_rk);
+                        const del = new Delegation(sign, encSrcCredId, rawDelegations[i].pubRk);
                         container.push(del.export());
                     }
                     log.debug("Loaded delegation", container);
@@ -104,7 +104,6 @@ export class BackupKey {
 
     async export(): Promise<ExportContainer> {
         const jwk = await window.crypto.subtle.exportKey("jwk", this.key);
-        log.debug('Encoded x: ', jwk.x);
         const rawJSON = {parsedKey: jwk, attObj: this.attObj};
         return new ExportContainer(this.id, JSON.stringify(rawJSON));
     }
@@ -272,7 +271,7 @@ async function parseJWK(jwk, usages): Promise<CryptoKey> {
 }
 
 export async function createPSKSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
-    let stpMsg = CBOR.encodeCanonical({att_obj: base64ToByteArray(backupKey.attObj, true)});
+    let stpMsg = CBOR.encodeCanonical({attObj: base64ToByteArray(backupKey.attObj, true)});
     let extOutput = new Map([[PSK, stpMsg]]);
     return new Uint8Array(CBOR.encodeCanonical(extOutput));
 }
