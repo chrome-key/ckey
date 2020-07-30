@@ -1,6 +1,6 @@
 import * as CBOR from 'cbor';
 import {getLogger} from './logging';
-import {getCompatibleKeyFromCryptoKey, ICOSECompatibleKey} from './crypto';
+import {getCompatibleKeyFromCryptoKey} from './crypto';
 import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from './utils';
 import {fetchExportContainer, saveExportContainer, saveKey} from './storage';
 import * as axios from "axios";
@@ -53,9 +53,9 @@ export async function pskRecovery () {
             log.debug(response1);
             const keyAmount = response1.data.keyAmount;
 
-            const rkPub = await RecoveryKey.generate(keyAmount);
+            const rkData = await RecoveryKey.generate(keyAmount);
 
-            await axios.default.post(BackupDeviceBaseUrl  + '/recovery', {recoveryKeys: rkPub, authId: authId})
+            await axios.default.post(BackupDeviceBaseUrl  + '/recovery', {rkData: rkData, authId: authId})
                 .then(async function (response2) {
                     log.debug(response2);
                     const rawDelegations = response2.data;
@@ -63,10 +63,13 @@ export async function pskRecovery () {
                     let i;
                     const container = new Array<ExportContainer>();
                     for (i = 0; i < rawDelegations.length; ++i) {
-                        const sign = rawDelegations[i].sign;
+                        const sign = base64ToByteArray(rawDelegations[i].sign, true);
+                        const encSign = byteArrayToBase64(sign, true);
                         const srcCredId = base64ToByteArray(rawDelegations[i].srcCredId, true);
                         const encSrcCredId = byteArrayToBase64(srcCredId, true);
-                        const del = new Delegation(sign, encSrcCredId, rawDelegations[i].pubRk);
+                        const dstCredId = base64ToByteArray(rawDelegations[i].dstCredId, true);
+                        const encDstCredId = byteArrayToBase64(dstCredId, true);
+                        const del = new Delegation(encSign, encSrcCredId, encDstCredId);
                         container.push(del.export());
                     }
                     log.debug("Loaded delegation", container);
@@ -129,18 +132,18 @@ export class BackupKey {
 export class RecoveryKey {
     key: CryptoKey;
     id: string;
-    backupKey: BackupKey;
+    attObj: Uint8Array;
 
-    constructor(key: CryptoKey, backupKey: BackupKey) {
-        this.id = backupKey.id;
-        this.backupKey = backupKey;
+    constructor(id: string, key: CryptoKey, attObj: Uint8Array) {
+        this.id = id;
         this.key = key;
+        this.attObj = attObj;
     }
 
     async export(): Promise<ExportContainer> {
         const parsedKey = await window.crypto.subtle.exportKey("jwk", this.key);
-        const expBackupKey = await this.backupKey.export();
-        const rawJSON = {parsedKey: parsedKey, parsedBackupKey: expBackupKey};
+        const parsedAttObj = byteArrayToBase64(this.attObj, true);
+        const rawJSON = {parsedKey: parsedKey, parsedAttObj: parsedAttObj};
 
         return new ExportContainer(this.id, JSON.stringify(rawJSON));
     }
@@ -148,13 +151,13 @@ export class RecoveryKey {
     static async import(kx: ExportContainer): Promise<RecoveryKey> {
         const json = JSON.parse(kx.payload);
         const key = await parseJWK(json.parsedKey, ['sign']);
-        const backupKey = await BackupKey.import(json.parsedBackupKey);
+        const attObj = base64ToByteArray(json.parsedAttObj, true);
 
-        return new RecoveryKey(key, backupKey);
+        return new RecoveryKey(kx.id, key, attObj);
     }
 
-    static async generate(n: number): Promise<Array<JsonWebKey>> {
-        const jwk = new Array<JsonWebKey>();
+    static async generate(n: number): Promise<Array<ExportContainer>> {
+        const delSetup = new Array<ExportContainer>();
         const container = new Array<ExportContainer>();
         let i;
         for (i = 0; i < n; ++i) {
@@ -163,32 +166,38 @@ export class RecoveryKey {
                 true,
                 ['sign'],
             );
-            const bckKey = await BackupKey.get();
-            const rk = new RecoveryKey(keyPair.privateKey, bckKey);
-            const exportRk = await rk.export();
-            const pubJWK: any = await window.crypto.subtle.exportKey("jwk", keyPair.publicKey);
-            pubJWK.kid = rk.id;
 
+            const bckKey = await BackupKey.get();
+            const pubRk = await getCompatibleKeyFromCryptoKey(keyPair.publicKey);
+            const pskSetup = await createPSKSetupExtensionOutput(bckKey);
+            const authData = await pubRk.generateAuthenticatorData("", 0, base64ToByteArray(bckKey.id, true), pskSetup);
+            const attObj = CBOR.encodeCanonical({
+                attStmt: new Map(),
+                authData: authData,
+                fmt: 'none',
+            });
+
+            const exportRk = await (new RecoveryKey(bckKey.id, keyPair.privateKey, attObj)).export();
             container.push(exportRk);
-            jwk.push(pubJWK);
+
+            delSetup.push(new ExportContainer(exportRk.id, byteArrayToBase64(attObj, true)));
+            log.debug("AttObj:", byteArrayToBase64(attObj, true));
         }
 
         await saveExportContainer(RECOVERY, container);
 
-        return jwk;
+        return delSetup;
     }
 }
 
 class Delegation {
     sign: string;
     srcCredId: string;
-    rkId: string;
-    pubRK: JsonWebKey;
-    constructor(sign, srcCredId, jwk) {
+    dstCredId: string;
+    constructor(sign, srcCredId, dstCredId) {
         this.srcCredId = srcCredId;
         this.sign = sign;
-        this.rkId = jwk.kid;
-        this.pubRK = jwk;
+        this.dstCredId = dstCredId;
     }
 
     export(): ExportContainer {
@@ -207,52 +216,19 @@ class Delegation {
 }
 
 class RecoveryMessage {
-    srcCredId: string;
-    delSign: Uint8Array;
-    pubRK: Uint8Array;
-    attestationObject: Uint8Array;
-    clientDataJSON: Uint8Array;
+    del: Delegation;
+    rk: RecoveryKey;
 
-    constructor() {
-        // Dummy
-    }
-
-    async init(delegation: Delegation, rkPub: ICOSECompatibleKey, backupKey: BackupKey, origin: string, challenge: ArrayBuffer) {
-        this.srcCredId = delegation.srcCredId;
-        this.delSign = base64ToByteArray(delegation.sign, true);
-
-        // Create attestation object for new key
-        const recoveryCredId = base64ToByteArray(delegation.rkId, true);
-
-        const pskExtOutput = await createPSKSetupExtensionOutput(backupKey);
-        const authData = await rkPub.generateAuthenticatorData(origin, 0, recoveryCredId, pskExtOutput);
-
-        const coseKey = await rkPub.toCOSE(rkPub.publicKey);
-        this.pubRK = new Uint8Array(CBOR.encodeCanonical(coseKey));
-
-        this.attestationObject = CBOR.encodeCanonical({
-            attStmt: new Map(),
-            authData: authData,
-            fmt: 'none',
-        });
-
-
-        const clientData = await rkPub.generateClientData(
-            challenge,
-            { origin, type: 'webauthn.create' },
-        );
-        this.clientDataJSON = base64ToByteArray(window.btoa(clientData), true);
-
+    constructor(delegation: Delegation, rk: RecoveryKey) {
+        this.del = delegation;
+        this.rk = rk;
     }
 
     encode(): ArrayBuffer {
         return CBOR.encodeCanonical({
-            delSign: byteArrayToBase64(this.delSign, true),
-            srcCredId: this.srcCredId,
-            authAttData: {
-                clientDataJSON: this.clientDataJSON,
-                attestationObject: this.attestationObject
-            },
+            delSign: this.del.sign,
+            srcCredId: this.del.srcCredId,
+            attestationObject: this.rk.attObj
         }).buffer;
     }
 }
@@ -303,7 +279,7 @@ class RecoveryOptions {
 async function getRecoveryOptions(srcCredId: string): Promise<RecoveryOptions> {
     const del = await Delegation.getById(srcCredId);
     log.debug('Use delegation', del);
-    const rk = await getRecoveryKey(del.rkId);
+    const rk = await getRecoveryKey(del.dstCredId);
     log.debug('Use recovery key', rk);
     return new RecoveryOptions(rk, del);
 }
@@ -333,11 +309,8 @@ export const recover = async (
     const encRkId = byteArrayToBase64(rkId, true);
 
     const rkPrv = await getCompatibleKeyFromCryptoKey(recOps.rk.key);
-    const rawRKPub = await parseJWK(recOps.del.pubRK, []);
-    const rkPub = await getCompatibleKeyFromCryptoKey(rawRKPub);
 
-    const recMessage = new RecoveryMessage();
-    await recMessage.init(recOps.del, rkPub, recOps.rk.backupKey, origin, publicKeyRequestOptions.challenge as ArrayBuffer);
+    const recMessage = new RecoveryMessage(recOps.del, recOps.rk);
     log.debug('Recovery message', recMessage);
     const extOutput = await createPSKRecoveryExtensionOutput(recMessage);
 
