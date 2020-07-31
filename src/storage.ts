@@ -54,8 +54,9 @@ export async function saveExportContainer(cType: ExportContainerType, container:
     log.debug(`Storing ${cType} container`, exportJSON);
 
     return new Promise<void>(async (res, rej) => {
-        chrome.storage.sync.set({[cType]: exportJSON}, () => {
+        chrome.storage.local.set({[cType]: exportJSON}, () => {
             if (!!chrome.runtime.lastError) {
+                log.error('Could not store container', chrome.runtime.lastError.message);
                 rej(chrome.runtime.lastError);
             } else {
                 res();
@@ -66,7 +67,7 @@ export async function saveExportContainer(cType: ExportContainerType, container:
 
 export async function fetchExportContainer(cType: ExportContainerType): Promise<Array<ExportContainer>> {
     return new Promise<Array<ExportContainer>>(async (res, rej) => {
-        chrome.storage.sync.get({[cType]: null}, async (resp) => {
+        chrome.storage.local.get({[cType]: null}, async (resp) => {
             if (!!chrome.runtime.lastError) {
                 log.warn(`Could not fetch ${cType} container`);
                 rej(chrome.runtime.lastError);

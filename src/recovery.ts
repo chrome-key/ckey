@@ -181,7 +181,6 @@ export class RecoveryKey {
             container.push(exportRk);
 
             delSetup.push(new ExportContainer(exportRk.id, byteArrayToBase64(attObj, true)));
-            log.debug("AttObj:", byteArrayToBase64(attObj, true));
         }
 
         await saveExportContainer(RECOVERY, container);
