@@ -85,7 +85,7 @@ export function base64ToByteArray(str: string, urlEncoded: boolean = false): Uin
   return Uint8Array.from(atob(rawInput), (c) => c.charCodeAt(0));
 }
 
-function padString(input: string): string {
+export function padString(input: string): string {
   let result = input;
   while (result.length % 4) {
     result += '=';

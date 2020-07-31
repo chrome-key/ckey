@@ -1,7 +1,7 @@
 import * as CBOR from 'cbor';
 import {getLogger} from './logging';
 import {getCompatibleKeyFromCryptoKey} from './crypto';
-import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from './utils';
+import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin, padString} from './utils';
 import {fetchExportContainer, saveExportContainer, saveKey} from './storage';
 import * as axios from "axios";
 
@@ -180,7 +180,7 @@ export class RecoveryKey {
             const exportRk = await (new RecoveryKey(bckKey.id, keyPair.privateKey, attObj)).export();
             container.push(exportRk);
 
-            delSetup.push(new ExportContainer(exportRk.id, byteArrayToBase64(attObj, true)));
+            delSetup.push(new ExportContainer(exportRk.id, padString(byteArrayToBase64(attObj, true))));
         }
 
         await saveExportContainer(RECOVERY, container);
