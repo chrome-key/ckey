@@ -52,7 +52,6 @@ export const processCredentialCreation = async (
     }
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, credId, extOutput);
 
-    // ToDo Add support for credential counter
     const clientData = await compatibleKey.generateClientData(
         publicKeyCreationOptions.challenge as ArrayBuffer,
         { origin, type: 'webauthn.create' },
@@ -99,16 +98,27 @@ export const processCredentialRequest = async (
         }
     }
 
-    const requestedCredential = publicKeyRequestOptions.allowCredentials[0]; // ToDo Handle all entries
-    const credId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
-    const encCredId = byteArrayToBase64(new Uint8Array(credId), true);
+    let i;
+    let key;
+    let credId: ArrayBuffer;
+    let encCredId;
+    for (i = 0; i < publicKeyRequestOptions.allowCredentials.length; i++) {
+        const requestedCredential = publicKeyRequestOptions.allowCredentials[i];
+        credId = requestedCredential.id as ArrayBuffer;
+        encCredId = byteArrayToBase64(new Uint8Array(credId), true);
+
+        key = await fetchKey(encCredId, pin).catch(_ => null);
+
+        if (key) {
+            break;
+        }
+    }
+    if (!key) {
+        throw new Error(`no credential with id ${JSON.stringify(publicKeyRequestOptions.allowCredentials)} not found`);
+    }
+
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
 
-    const key = await fetchKey(encCredId, pin);
-
-    if (!key) {
-        throw new Error(`credential with id ${encCredId} not found`);
-    }
     const compatibleKey = await getCompatibleKeyFromCryptoKey(key);
     const clientData = await compatibleKey.generateClientData(
         publicKeyRequestOptions.challenge as ArrayBuffer,
@@ -123,7 +133,6 @@ export const processCredentialRequest = async (
     const clientDataJSON = base64ToByteArray(window.btoa(clientData));
     const clientDataHash = new Uint8Array(await window.crypto.subtle.digest('SHA-256', clientDataJSON));
 
-    // ToDo Update counter
     const authenticatorData = await compatibleKey.generateAuthenticatorData(rpID, 0, new Uint8Array(), null);
 
     // Prepare input for signature

@@ -278,8 +278,14 @@ class RecoveryOptions {
 async function getRecoveryOptions(srcCredId: string): Promise<RecoveryOptions> {
     const del = await Delegation.getById(srcCredId);
     log.debug('Use delegation', del);
+    if (del == null) {
+        return null;
+    }
     const rk = await getRecoveryKey(del.dstCredId);
     log.debug('Use recovery key', rk);
+    if (rk == null) {
+        return null;
+    }
     return new RecoveryOptions(rk, del);
 }
 
@@ -295,13 +301,27 @@ export const recover = async (
         return null;
     }
 
-    // For now we will only worry about the first entry
-    const requestedCredential = publicKeyRequestOptions.allowCredentials[0];
-    const srcCredId: ArrayBuffer = requestedCredential.id as ArrayBuffer;
-    const encSrcCredId = byteArrayToBase64(new Uint8Array(srcCredId), true);
-    log.info('Started recovery for', encSrcCredId);
+    let srcCredId: ArrayBuffer;
+    let encSrcCredId;
+    let i;
+    let recOps;
+    let requestedCredential;
+    for (i = 0; i < publicKeyRequestOptions.allowCredentials.length; i++) {
+        requestedCredential = publicKeyRequestOptions.allowCredentials[i];
+        srcCredId = requestedCredential.id as ArrayBuffer;
+        encSrcCredId = byteArrayToBase64(new Uint8Array(srcCredId), true);
 
-    const recOps = await getRecoveryOptions(encSrcCredId);
+        recOps = await getRecoveryOptions(encSrcCredId);
+
+        if (recOps != null) {
+            break;
+        }
+    }
+    if (!recOps) {
+        throw new Error(`no recovery options available for credential with id ${JSON.stringify(publicKeyRequestOptions.allowCredentials)}`);
+    }
+
+    log.info('Started recovery for', encSrcCredId);
     log.debug('Recovery options', recOps);
 
     const rkId = base64ToByteArray(recOps.rk.id, true);
