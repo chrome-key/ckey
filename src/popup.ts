@@ -3,7 +3,6 @@ import { getLogger } from './logging';
 
 const log = getLogger('popup');
 
-
 $(() => {
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs: chrome.tabs.Tab[]) => {
         const currentTab = tabs.find((t) => !!t.id);
@@ -24,7 +23,6 @@ $(() => {
                 type: 'recovery',
             });
         });
-
 
         const tabKey = `tab-${currentTab.id}`;
         chrome.storage.local.get([tabKey], (result) => {

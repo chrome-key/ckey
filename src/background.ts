@@ -1,9 +1,12 @@
 import {disabledIcons, enabledIcons} from './constants';
+
 import {getLogger} from './logging';
+
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
-import {processCredentialRequest, processCredentialCreation} from './webauthn';
-import {BackupDeviceBaseUrl, RecoveryKey, pskSetup, pskRecovery} from "./recovery";
-import * as axios from 'axios';
+
+import {processCredentialCreation, processCredentialRequest} from './webauthn';
+
+import {pskRecovery, pskSetup} from './recovery';
 
 const log = getLogger('background');
 
@@ -41,9 +44,9 @@ const setup = async () => {
 };
 
 const recovery = async () => {
-    log.debug('Recovery called!')
+    log.debug('Recovery called!');
     await pskRecovery();
-}
+};
 
 const create = async (msg, sender: chrome.runtime.MessageSender) => {
     if (!sender.tab || !sender.tab.id) {
@@ -116,10 +119,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             break;
         case 'setup':
-            setup().then(() => alert("Backup keys synchronized successfully!"));
+            setup().then(() => alert('Backup keys synchronized successfully!'));
             break;
         case 'recovery':
-            recovery().then(() => alert("Recovery finished successfully!"))
+            recovery().then(() => alert('Recovery finished successfully!'));
             break;
         default:
             sendResponse(null);

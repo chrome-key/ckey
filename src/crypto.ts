@@ -1,8 +1,5 @@
 import * as CBOR from 'cbor';
-import { getLogger } from './logging';
-import { base64ToByteArray, byteArrayToBase64 } from './utils';
-
-const log = getLogger('crypto');
+import {base64ToByteArray, byteArrayToBase64} from './utils';
 
 // Copied from krypton
 function counterToBytes(c: number): Uint8Array {
@@ -30,7 +27,8 @@ export interface ICOSECompatibleKey {
     privateKey?: CryptoKey;
     publicKey?: CryptoKey;
     generateClientData(challenge: ArrayBuffer, extraOptions: any): Promise<string>;
-    generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array, extensionOutput: Uint8Array): Promise<Uint8Array>;
+    generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array,
+                              extensionOutput: Uint8Array): Promise<Uint8Array>;
     sign(clientData: Uint8Array): Promise<ArrayBuffer>;
     toCOSE(key: CryptoKey): Promise<Map<number, any>>;
 }
@@ -38,7 +36,7 @@ export interface ICOSECompatibleKey {
 class ECDSA implements ICOSECompatibleKey {
 
     public static async fromKey(key: CryptoKey): Promise<ECDSA> {
-        if (key.type === "public") {
+        if (key.type === 'public') {
             return new ECDSA(ellipticNamedCurvesToCOSE[(key.algorithm as EcKeyAlgorithm).namedCurve], null, key);
         } else {
             return new ECDSA(ellipticNamedCurvesToCOSE[(key.algorithm as EcKeyAlgorithm).namedCurve], key);
@@ -91,7 +89,8 @@ class ECDSA implements ICOSECompatibleKey {
         });
     }
 
-    public async generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array, extensionOutput: Uint8Array = null): Promise<Uint8Array> {
+    public async generateAuthenticatorData(rpID: string, counter: number, credentialId: Uint8Array,
+                                           extensionOutput: Uint8Array = null): Promise<Uint8Array> {
         const rpIdDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpID));
         const rpIdHash = new Uint8Array(rpIdDigest);
 
@@ -183,28 +182,24 @@ class ECDSA implements ICOSECompatibleKey {
             this.getKeyParams(),
             this.privateKey,
             data,
-        )
+        );
 
-        const rawSig = new Buffer(tmpSign)
+        const rawSig = new Buffer(tmpSign);
 
         // Credit to: https://stackoverflow.com/a/39651457/5333936
         const asn1 = require('asn1.js');
         const BN = require('bn.js');
 
-        const EcdsaDerSig = asn1.define('ECPrivateKey', function() {
+        const ECDSA_DER_SIG = asn1.define('ECPrivateKey', function() {
             return this.seq().obj(
                 this.key('r').int(),
-                this.key('s').int()
+                this.key('s').int(),
             );
         });
 
         const r = new BN(rawSig.slice(0, 32).toString('hex'), 16, 'be');
         const s = new BN(rawSig.slice(32).toString('hex'), 16, 'be');
-        return EcdsaDerSig.encode({r, s}, 'der');
-    }
-
-    private getKeyParams(): EcdsaParams {
-        return { name: 'ECDSA', hash: coseEllipticCurveNames[ECDSA.ellipticCurveKeys[this.algorithm]] };
+        return ECDSA_DER_SIG.encode({r, s}, 'der');
     }
 
     public async toCOSE(key: CryptoKey): Promise<Map<number, any>> {
@@ -219,6 +214,10 @@ class ECDSA implements ICOSECompatibleKey {
         attData.set(-2, base64ToByteArray(exportedKey.x, true));
         attData.set(-3, base64ToByteArray(exportedKey.y, true));
         return attData;
+    }
+
+    private getKeyParams(): EcdsaParams {
+        return { name: 'ECDSA', hash: coseEllipticCurveNames[ECDSA.ellipticCurveKeys[this.algorithm]] };
     }
 }
 

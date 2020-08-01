@@ -1,7 +1,10 @@
 import {ivLength, keyExportFormat, saltLength} from './constants';
+
 import {base64ToByteArray, byteArrayToBase64, concatenate} from './utils';
-import {getLogger} from "./logging";
-import {ExportContainer, ExportContainerType} from "./recovery";
+
+import {getLogger} from './logging';
+
+import {ExportContainer, ExportContainerType} from './recovery';
 
 const log = getLogger('storage');
 
@@ -48,8 +51,8 @@ const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey>
     );
 };
 
-export async function saveExportContainer(cType: ExportContainerType, container: Array<ExportContainer>): Promise<void> {
-    let exportJSON = JSON.stringify(container);
+export async function saveExportContainer(cType: ExportContainerType, container: ExportContainer[]): Promise<void> {
+    const exportJSON = JSON.stringify(container);
 
     log.debug(`Storing ${cType} container`, exportJSON);
 
@@ -65,8 +68,8 @@ export async function saveExportContainer(cType: ExportContainerType, container:
     });
 }
 
-export async function fetchExportContainer(cType: ExportContainerType): Promise<Array<ExportContainer>> {
-    return new Promise<Array<ExportContainer>>(async (res, rej) => {
+export async function fetchExportContainer(cType: ExportContainerType): Promise<ExportContainer[]> {
+    return new Promise<ExportContainer[]>(async (res, rej) => {
         chrome.storage.local.get({[cType]: null}, async (resp) => {
             if (!!chrome.runtime.lastError) {
                 log.warn(`Could not fetch ${cType} container`);
@@ -78,8 +81,8 @@ export async function fetchExportContainer(cType: ExportContainerType): Promise<
                 return rej(`Container ${cType} not found`);
             }
 
-            let exportJSON = await JSON.parse(resp[cType]);
-            let exportContainer = new Array<ExportContainer>();
+            const exportJSON = await JSON.parse(resp[cType]);
+            const exportContainer = new Array<ExportContainer>();
             let i;
             for (i = 0; i < exportJSON.length; ++i) {
                 exportContainer.push(new ExportContainer(exportJSON[i].id, exportJSON[i].payload));
@@ -98,7 +101,7 @@ export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => 
                 return;
             }
             if (resp[key] == null) {
-                return rej("Key not found");
+                return rej('Key not found');
             }
             log.info('PIN', pin);
             const payload = base64ToByteArray(resp[key]);

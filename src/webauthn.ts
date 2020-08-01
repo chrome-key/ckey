@@ -1,13 +1,14 @@
 import * as CBOR from 'cbor';
+
 import {getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
-import { getLogger } from './logging';
-import { fetchKey, keyExists, saveKey } from './storage';
-import { base64ToByteArray, byteArrayToBase64, getDomainFromOrigin } from './utils';
-import {
-    BackupKey,
-    PSK,
-    createPSKSetupExtensionOutput, recover,
-} from "./recovery";
+
+import {getLogger} from './logging';
+
+import {fetchKey, keyExists, saveKey} from './storage';
+
+import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from './utils';
+
+import {BackupKey, createPSKSetupExtensionOutput, PSK, recover} from './recovery';
 
 const log = getLogger('webauthn');
 
@@ -34,7 +35,7 @@ export const processCredentialCreation = async (
     const rp = publicKeyCreationOptions.rp;
     const rpID = rp.id || getDomainFromOrigin(origin);
 
-    let bckpKey = await BackupKey.get();
+    const bckpKey = await BackupKey.get();
     log.info('Use backup key', bckpKey);
 
     const credId = base64ToByteArray(bckpKey.id, true);
@@ -44,7 +45,7 @@ export const processCredentialCreation = async (
         throw new Error(`credential with id ${encCredId} already exists`);
     }
 
-    let compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
+    const compatibleKey = await getCompatibleKey(publicKeyCreationOptions.pubKeyCredParams);
 
     let extOutput = null;
     if (supportRecovery) {
@@ -107,14 +108,14 @@ export const processCredentialRequest = async (
         credId = requestedCredential.id as ArrayBuffer;
         encCredId = byteArrayToBase64(new Uint8Array(credId), true);
 
-        key = await fetchKey(encCredId, pin).catch(_ => null);
+        key = await fetchKey(encCredId, pin).catch((_) => null);
 
         if (key) {
             break;
         }
     }
     if (!key) {
-        throw new Error(`no credential with id ${JSON.stringify(publicKeyRequestOptions.allowCredentials)} not found`);
+        throw new Error(`credential with id ${JSON.stringify(publicKeyRequestOptions.allowCredentials)} not found`);
     }
 
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
@@ -150,7 +151,7 @@ export const processCredentialRequest = async (
         rawId: credId,
         response: {
             authenticatorData: authenticatorData.buffer,
-            clientDataJSON: clientDataJSON,
+            clientDataJSON,
             signature: (new Uint8Array(signature)).buffer,
             userHandle: new ArrayBuffer(0),
         },
