@@ -10,20 +10,6 @@ $(() => {
             return;
         }
 
-        $('#Setup').on('click', function(evt: Event) {
-            evt.preventDefault();
-            chrome.runtime.sendMessage({
-                type: 'setup',
-            });
-        });
-
-        $('#Recovery').on('click', function(evt: Event) {
-            evt.preventDefault();
-            chrome.runtime.sendMessage({
-                type: 'recovery',
-            });
-        });
-
         const tabKey = `tab-${currentTab.id}`;
         chrome.storage.local.get([tabKey], (result) => {
             log.debug('got storage results', result);
