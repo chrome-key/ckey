@@ -1,5 +1,14 @@
+import * as asn1 from 'asn1.js';
+import {BN} from 'bn.js';
 import * as CBOR from 'cbor';
 import {base64ToByteArray, byteArrayToBase64} from './utils';
+
+const CKEY_ID = new Uint8Array([
+    1214244733, 1205845608, 840015201, 3897052717,
+    4072880437, 4027233456, 675224361, 2305433287,
+    74291263, 3461796691, 701523034, 3178201666,
+    3992003567, 1410532, 4234129691, 1438515639,
+]);
 
 // Copied from krypton
 function counterToBytes(c: number): Uint8Array {
@@ -101,7 +110,7 @@ class ECDSA implements ICOSECompatibleKey {
 
         let authenticatorDataLength = rpIdHash.length + 1 + 4;
         if (this.publicKey) {
-            aaguid = credentialId.slice(0, 16);
+            aaguid = CKEY_ID.slice(0, 16);
             // 16-bit unsigned big-endian integer.
             credIdLen = new Uint8Array(2);
             credIdLen[0] = (credentialId.length >> 8) & 0xff;
@@ -178,28 +187,24 @@ class ECDSA implements ICOSECompatibleKey {
         if (!this.privateKey) {
             throw new Error('no private key available for signing');
         }
-        const tmpSign = await window.crypto.subtle.sign(
+        const rawSign = await window.crypto.subtle.sign(
             this.getKeyParams(),
             this.privateKey,
             data,
         );
 
-        const rawSig = new Buffer(tmpSign);
+        const rawSignBuf = new Buffer(rawSign);
 
         // Credit to: https://stackoverflow.com/a/39651457/5333936
-        const asn1 = require('asn1.js');
-        const BN = require('bn.js');
-
-        const ECDSA_DER_SIG = asn1.define('ECPrivateKey', function() {
+        const ecdsaDerSig = asn1.define('ECPrivateKey', function() {
             return this.seq().obj(
                 this.key('r').int(),
                 this.key('s').int(),
             );
         });
-
-        const r = new BN(rawSig.slice(0, 32).toString('hex'), 16, 'be');
-        const s = new BN(rawSig.slice(32).toString('hex'), 16, 'be');
-        return ECDSA_DER_SIG.encode({r, s}, 'der');
+        const r = new BN(rawSignBuf.slice(0, 32).toString('hex'), 16, 'be');
+        const s = new BN(rawSignBuf.slice(32).toString('hex'), 16, 'be');
+        return ecdsaDerSig.encode({r, s}, 'der');
     }
 
     public async toCOSE(key: CryptoKey): Promise<Map<number, any>> {
