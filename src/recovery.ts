@@ -13,18 +13,31 @@ const log = getLogger('recovery');
 
 export const PSK: string = 'psk';
 
-export const BACKUP_DEVICE_BASE_URL = 'http://localhost:8005'; // ToDo Load from a config file
+const BACKUP_DEVICE_URL = 'bd_url';
+
+export async function setBackupDeviceBaseUrl(url: string) {
+    await saveExportContainer(CONFIG, new Array(new ExportContainer(BACKUP_DEVICE_URL, url)));
+}
+
+export async function getBackupDeviceBaseUrl(): Promise<string> {
+    const ct = await fetchExportContainer(CONFIG).catch(_ => Array());
+    const config = ct.filter((c) => c.id === BACKUP_DEVICE_URL);
+    return config.length !== 0 ? config[0].payload : 'http://localhost:8005';
+}
 
 export type ExportContainerType = string;
 const BACKUP: ExportContainerType = 'backup';
 const RECOVERY: ExportContainerType = 'recovery';
 const DELEGATION: ExportContainerType = 'delegation';
+const CONFIG: ExportContainerType = 'config';
 
 export async function pskSetup() {
     const authId = prompt('Please enter a name for your authenticator', 'MyAuth');
     const keyAmount: number = +prompt('How many backup keys should be created?', '5');
 
-    await axios.default.post(BACKUP_DEVICE_BASE_URL  + '/setup', {authId, keyAmount})
+    const url = await getBackupDeviceBaseUrl();
+
+    await axios.default.post(url  + '/setup', {authId, keyAmount})
         .then(async function(response) {
             log.debug(response);
             const stpRsp = response.data;
@@ -52,14 +65,16 @@ export async function pskSetup() {
 export async function pskRecovery() {
     const authId = prompt('Which authenticator you want to replace?', 'MyAuth');
 
-    await axios.default.get(BACKUP_DEVICE_BASE_URL  + '/recovery?authId=' + authId)
+    const url = await getBackupDeviceBaseUrl();
+
+    await axios.default.get(url  + '/recovery?authId=' + authId)
         .then(async function(response1) {
             log.debug(response1);
             const keyAmount = response1.data.keyAmount;
 
             const rkData = await RecoveryKey.generate(keyAmount);
 
-            await axios.default.post(BACKUP_DEVICE_BASE_URL  + '/recovery', {rkData, authId})
+            await axios.default.post(url  + '/recovery', {rkData, authId})
                 .then(async function(response2) {
                     log.debug(response2);
                     const rawDelegations = response2.data;

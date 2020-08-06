@@ -6,7 +6,7 @@ import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 
 import {processCredentialCreation, processCredentialRequest} from './webauthn';
 
-import {pskRecovery, pskSetup} from './recovery';
+import {pskRecovery, pskSetup, setBackupDeviceBaseUrl} from './recovery';
 
 const log = getLogger('background');
 
@@ -46,6 +46,11 @@ const setup = async () => {
 const recovery = async () => {
     log.debug('Recovery called!');
     await pskRecovery();
+};
+
+const saveOptions = async (msg) => {
+    log.debug('Save options called!');
+    setBackupDeviceBaseUrl(msg);
 };
 
 const create = async (msg, sender: chrome.runtime.MessageSender) => {
@@ -123,6 +128,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
         case 'recovery':
             recovery().then(() => alert('Recovery finished successfully!'));
+            break;
+        case 'saveOptions':
+            saveOptions(msg.url).then(() => alert('Saving options successfully!'));
             break;
         default:
             sendResponse(null);

@@ -9,7 +9,7 @@ module.exports = {
     'chromium/js/content_script.js': './src/content_script.ts',
     'chromium/js/inject_webauthn.js': './src/inject_webauthn.ts',
     'chromium/js/popup.js': './src/popup.ts',
-    'chromium/js/option.js': './src/option.ts'
+    'chromium/js/options.js': './src/options.ts'
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
