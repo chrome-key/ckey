@@ -8,24 +8,132 @@ import {ExportContainer, ExportContainerType} from './recovery';
 
 const log = getLogger('storage');
 
-export const keyExists = (key: string): Promise<boolean> => {
-    return new Promise<boolean>(async (res, rej) => {
-        chrome.storage.sync.get({[key]: null}, (resp) => {
-            if (!!chrome.runtime.lastError) {
-                rej(chrome.runtime.lastError);
-            } else {
-                res(!(resp[key] == null));
-            }
+// https://www.w3.org/TR/webauthn/#public-key-credential-source
+export class PublicKeyCredentialSource {
+    public static exits = (id: string): Promise<boolean> => {
+        return new Promise<boolean>(async (res, rej) => {
+            chrome.storage.sync.get({[id]: null}, (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    rej(chrome.runtime.lastError);
+                } else {
+                    res(!(resp[id] == null));
+                }
+            });
         });
-    });
-};
+    };
 
-export const deleteKey = (key: string) => {
-    return new Promise(async (res, _) => {
-        chrome.storage.sync.remove(key);
-        res();
-    });
-};
+    public static async load(id: string, pin: string): Promise<PublicKeyCredentialSource> {
+        log.debug('Loading public key credential source for',id);
+        return new Promise<PublicKeyCredentialSource>(async (res, rej) => {
+            chrome.storage.sync.get({[id]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    rej(chrome.runtime.lastError);
+                    return;
+                }
+                if (resp[id] == null) {
+                    return rej('Public key credential source not found');
+                }
+
+                const json = JSON.parse(resp[id]);
+
+                const _id = json.id;
+                const _rpId = json.rpId;
+                const _userHandle = json.userHandle;
+
+                const keyPayload = base64ToByteArray(json.privateKey);
+                const saltByteLength = keyPayload[0];
+                const ivByteLength = keyPayload[1];
+                const keyAlgorithmByteLength = keyPayload[2];
+                let offset = 3;
+                const salt = keyPayload.subarray(offset, offset + saltByteLength);
+                offset += saltByteLength;
+                const iv = keyPayload.subarray(offset, offset + ivByteLength);
+                offset += ivByteLength;
+                const keyAlgorithmBytes = keyPayload.subarray(offset, offset + keyAlgorithmByteLength);
+                offset += keyAlgorithmByteLength;
+                const keyBytes = keyPayload.subarray(offset);
+
+                const wrappingKey = await getWrappingKey(pin, salt);
+                const wrapAlgorithm: AesGcmParams = {
+                    iv,
+                    name: 'AES-GCM',
+                };
+                const unwrappingKeyAlgorithm = JSON.parse(new TextDecoder().decode(keyAlgorithmBytes));
+                const _privateKey = await window.crypto.subtle.unwrapKey(
+                    keyExportFormat,
+                    keyBytes,
+                    wrappingKey,
+                    wrapAlgorithm,
+                    unwrappingKeyAlgorithm,
+                    true,
+                    ['sign'],
+                );
+                res(new PublicKeyCredentialSource(_id, _privateKey, _rpId, _userHandle));
+            });
+        });
+    }
+
+    public id: string
+    public privateKey: CryptoKey
+    public rpId: string
+    public userHandle: string
+    public type: string
+
+    constructor(id: string, privateKey: CryptoKey, rpId: string, userHandle: string) {
+        this.id = id;
+        this.privateKey = privateKey;
+        this.rpId = rpId;
+        this.userHandle = userHandle;
+        this.type = "public-key";
+    }
+
+    public async store(pin: string): Promise<void> {
+        return new Promise<void>(async (res, rej) => {
+            if (!pin) {
+                rej('no pin provided');
+                return;
+            }
+            const salt = window.crypto.getRandomValues(new Uint8Array(saltLength));
+            const wrappingKey = await getWrappingKey(pin, salt);
+            const iv = window.crypto.getRandomValues(new Uint8Array(ivLength));
+            const wrapAlgorithm: AesGcmParams = {
+                iv,
+                name: 'AES-GCM',
+            };
+
+            const wrappedKeyBuffer = await window.crypto.subtle.wrapKey(
+                keyExportFormat,
+                this.privateKey,
+                wrappingKey,
+                wrapAlgorithm,
+            );
+            const wrappedKey = new Uint8Array(wrappedKeyBuffer);
+            const keyAlgorithm = new TextEncoder().encode(JSON.stringify(this.privateKey.algorithm));
+            const payload = concatenate(
+                Uint8Array.of(saltLength, ivLength, keyAlgorithm.length),
+                salt,
+                iv,
+                keyAlgorithm,
+                wrappedKey);
+
+            const json = {
+                id: this.id,
+                privateKey: byteArrayToBase64(payload),
+                rpId: this.rpId,
+                userHandle: this.userHandle,
+                type: this.type
+            }
+
+            chrome.storage.sync.set({[this.id]: JSON.stringify(json)}, () => {
+                if (!!chrome.runtime.lastError) {
+                    rej(chrome.runtime.lastError);
+                } else {
+                    res();
+                }
+            });
+        });
+    }
+}
 
 const getWrappingKey = async (pin: string, salt: Uint8Array): Promise<CryptoKey> => {
     const enc = new TextEncoder();
@@ -91,86 +199,3 @@ export async function fetchExportContainer(cType: ExportContainerType): Promise<
         });
     });
 }
-
-export const fetchKey = async (key: string, pin: string): Promise<CryptoKey> => {
-    log.debug('Fetching key for', key);
-    return new Promise<CryptoKey>(async (res, rej) => {
-        chrome.storage.sync.get({[key]: null}, async (resp) => {
-            if (!!chrome.runtime.lastError) {
-                rej(chrome.runtime.lastError);
-                return;
-            }
-            if (resp[key] == null) {
-                return rej('Key not found');
-            }
-            log.info('PIN', pin);
-            const payload = base64ToByteArray(resp[key]);
-            const saltByteLength = payload[0];
-            const ivByteLength = payload[1];
-            const keyAlgorithmByteLength = payload[2];
-            let offset = 3;
-            const salt = payload.subarray(offset, offset + saltByteLength);
-            offset += saltByteLength;
-            const iv = payload.subarray(offset, offset + ivByteLength);
-            offset += ivByteLength;
-            const keyAlgorithmBytes = payload.subarray(offset, offset + keyAlgorithmByteLength);
-            offset += keyAlgorithmByteLength;
-            const keyBytes = payload.subarray(offset);
-
-            const wrappingKey = await getWrappingKey(pin, salt);
-            const wrapAlgorithm: AesGcmParams = {
-                iv,
-                name: 'AES-GCM',
-            };
-            const unwrappingKeyAlgorithm = JSON.parse(new TextDecoder().decode(keyAlgorithmBytes));
-            window.crypto.subtle.unwrapKey(
-                keyExportFormat,
-                keyBytes,
-                wrappingKey,
-                wrapAlgorithm,
-                unwrappingKeyAlgorithm,
-                true,
-                ['sign'],
-            ).then(res, rej);
-        });
-    });
-};
-
-export const saveKey = (key: string, privateKey: CryptoKey, pin: string): Promise<void> => {
-    return new Promise<void>(async (res, rej) => {
-        if (!pin) {
-            rej('no pin provided');
-            return;
-        }
-        const salt = window.crypto.getRandomValues(new Uint8Array(saltLength));
-        const wrappingKey = await getWrappingKey(pin, salt);
-        const iv = window.crypto.getRandomValues(new Uint8Array(ivLength));
-        const wrapAlgorithm: AesGcmParams = {
-            iv,
-            name: 'AES-GCM',
-        };
-
-        const wrappedKeyBuffer = await window.crypto.subtle.wrapKey(
-            keyExportFormat,
-            privateKey,
-            wrappingKey,
-            wrapAlgorithm,
-        );
-        const wrappedKey = new Uint8Array(wrappedKeyBuffer);
-        const keyAlgorithm = new TextEncoder().encode(JSON.stringify(privateKey.algorithm));
-        const payload = concatenate(
-            Uint8Array.of(saltLength, ivLength, keyAlgorithm.length),
-            salt,
-            iv,
-            keyAlgorithm,
-            wrappedKey);
-
-        chrome.storage.sync.set({[key]: byteArrayToBase64(payload)}, () => {
-            if (!!chrome.runtime.lastError) {
-                rej(chrome.runtime.lastError);
-            } else {
-                res();
-            }
-        });
-    });
-};

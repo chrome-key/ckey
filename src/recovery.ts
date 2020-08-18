@@ -3,7 +3,7 @@ import * as CBOR from 'cbor';
 
 import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin, padString} from './utils';
 
-import {fetchExportContainer, saveExportContainer, saveKey} from './storage';
+import {fetchExportContainer, saveExportContainer, PublicKeyCredentialSource} from './storage';
 
 import {getCompatibleKeyFromCryptoKey} from './crypto';
 
@@ -351,7 +351,10 @@ export const recover = async (
     log.debug('Recovery message', recMessage);
     const extOutput = await createPSKRecoveryExtensionOutput(recMessage);
 
-    await saveKey(encRkId, rkPrv.privateKey, pin);
+    const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
+
+    const publicKeyCredentialSource = new PublicKeyCredentialSource(encRkId, rkPrv.privateKey, rpID, null);
+    await publicKeyCredentialSource.store( pin);
 
     const clientData = await rkPrv.generateClientData(
         publicKeyRequestOptions.challenge as ArrayBuffer,
@@ -365,8 +368,6 @@ export const recover = async (
     );
     const clientDataJSON = base64ToByteArray(window.btoa(clientData));
     const clientDataHash = new Uint8Array(await window.crypto.subtle.digest('SHA-256', clientDataJSON));
-
-    const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
 
     const authenticatorData = await rkPrv.generateAuthenticatorData(rpID, 0, new Uint8Array(),
         new Uint8Array(extOutput));

@@ -4,7 +4,7 @@ import {getCompatibleKey, getCompatibleKeyFromCryptoKey} from './crypto';
 
 import {getLogger} from './logging';
 
-import {fetchKey, keyExists, saveKey} from './storage';
+import {PublicKeyCredentialSource} from './storage';
 
 import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from './utils';
 
@@ -41,7 +41,7 @@ export const processCredentialCreation = async (
     const credId = base64ToByteArray(bckpKey.id, true);
     const encCredId = byteArrayToBase64(credId, true);
 
-    if (await keyExists(encCredId)) {
+    if (await PublicKeyCredentialSource.exits(encCredId)) {
         throw new Error(`credential with id ${encCredId} already exists`);
     }
 
@@ -64,7 +64,8 @@ export const processCredentialCreation = async (
         fmt: 'none',
     }).buffer;
 
-    await saveKey(encCredId, compatibleKey.privateKey, pin);
+    const publicKeyCredentialSource = new PublicKeyCredentialSource(encCredId, compatibleKey.privateKey, rpID, null)
+    await publicKeyCredentialSource.store(pin);
 
     log.debug('Attestation created');
 
@@ -100,7 +101,7 @@ export const processCredentialRequest = async (
     }
 
     let i;
-    let key;
+    let publicKeyCredentialSource: PublicKeyCredentialSource;
     let credId: ArrayBuffer;
     let encCredId;
     for (i = 0; i < publicKeyRequestOptions.allowCredentials.length; i++) {
@@ -108,19 +109,19 @@ export const processCredentialRequest = async (
         credId = requestedCredential.id as ArrayBuffer;
         encCredId = byteArrayToBase64(new Uint8Array(credId), true);
 
-        key = await fetchKey(encCredId, pin).catch((_) => null);
+        publicKeyCredentialSource = await PublicKeyCredentialSource.load(encCredId, pin).catch((_) => null);
 
-        if (key) {
+        if (publicKeyCredentialSource) {
             break;
         }
     }
-    if (!key) {
+    if (!publicKeyCredentialSource) {
         throw new Error(`credential with id ${JSON.stringify(publicKeyRequestOptions.allowCredentials)} not found`);
     }
 
     const rpID = publicKeyRequestOptions.rpId || getDomainFromOrigin(origin);
 
-    const compatibleKey = await getCompatibleKeyFromCryptoKey(key);
+    const compatibleKey = await getCompatibleKeyFromCryptoKey(publicKeyCredentialSource.privateKey);
     const clientData = await compatibleKey.generateClientData(
         publicKeyRequestOptions.challenge as ArrayBuffer,
         {
