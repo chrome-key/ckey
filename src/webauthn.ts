@@ -23,6 +23,19 @@ export const processCredentialCreation = async (
         return null;
     }
 
+    let i;
+    for (i = 0; i < publicKeyCreationOptions.excludeCredentials.length; i++) {
+        const requestedCredential = publicKeyCreationOptions.excludeCredentials[i];
+        const credId = requestedCredential.id as ArrayBuffer;
+        const encCredId = byteArrayToBase64(new Uint8Array(credId), true);
+
+        const publicKeyCredentialSource = await PublicKeyCredentialSource.load(encCredId, pin).catch((_) => null);
+
+        if (publicKeyCredentialSource) {
+            throw new Error(`authenticator manages credential contained in excludeCredentials option.`);
+        }
+    }
+
     let supportRecovery = false;
     const reqExt: any = publicKeyCreationOptions.extensions;
     if (reqExt !== undefined) {

@@ -10,9 +10,9 @@ const log = getLogger('storage');
 
 // https://www.w3.org/TR/webauthn/#public-key-credential-source
 export class PublicKeyCredentialSource {
-    public static exits = (id: string): Promise<boolean> => {
+    public static async exits (id: string): Promise<boolean> {
         return new Promise<boolean>(async (res, rej) => {
-            chrome.storage.sync.get({[id]: null}, (resp) => {
+            chrome.storage.sync.get({[id]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
                     rej(chrome.runtime.lastError);
                 } else {
