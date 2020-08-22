@@ -31,24 +31,24 @@ const RECOVERY: ExportContainerType = 'recovery';
 const DELEGATION: ExportContainerType = 'delegation';
 const CONFIG: ExportContainerType = 'config';
 
-export async function pskSetup() {
-    const authId = prompt('Please enter a name for your authenticator', 'MyAuth');
+export async function pskSetup(): Promise<void> {
+    const authAlias = prompt('Please enter a name for your authenticator', 'MyAuth');
     const keyAmount: number = +prompt('How many backup keys should be created?', '5');
 
     const url = await getBackupDeviceBaseUrl();
 
-    await axios.default.post(url  + '/setup', {authId, keyAmount})
+    return await axios.default.post(url  + '/setup', {authAlias, keyAmount})
         .then(async function(response) {
             log.debug(response);
             const stpRsp = response.data;
             let i;
             const container = new Array<ExportContainer>();
             for (i = 0; i < stpRsp.length; ++i) {
-                const jwk = stpRsp[i].jwk;
+                const jwk = stpRsp[i].publicBackupKey;
                 const attObj = stpRsp[i].attObj;
                 const parsedKey = await parseJWK(jwk, []);
-                const id = base64ToByteArray(jwk.kid, true);
-                const encId = byteArrayToBase64(id, true);
+                const credId = base64ToByteArray(stpRsp[i].credId, true);
+                const encId = byteArrayToBase64(credId, true);
                 const bckpKey = new BackupKey(parsedKey, encId, attObj);
                 const expBckpKey = await bckpKey.export();
                 container.push(expBckpKey);
@@ -56,9 +56,6 @@ export async function pskSetup() {
             log.debug('Loaded backup keys', container);
 
             await saveExportContainer(BACKUP, container);
-        })
-        .catch(function(error) {
-            log.error(error);
         });
 }
 
@@ -132,20 +129,20 @@ export class BackupKey {
         return await BackupKey.import(key);
     }
 
-    public key: CryptoKey;
-    public attObj: string;
-    public id: string;
+    public publicBackupKey: CryptoKey;
+    public backupDeviceAttObj: string;
+    public credentialId: string;
 
     constructor(key: CryptoKey, id: string, attObj: string) {
-        this.key = key;
-        this.id = id;
-        this.attObj = attObj;
+        this.publicBackupKey = key;
+        this.credentialId = id;
+        this.backupDeviceAttObj = attObj;
     }
 
     public async export(): Promise<ExportContainer> {
-        const jwk = await window.crypto.subtle.exportKey('jwk', this.key);
-        const rawJSON = {parsedKey: jwk, attObj: this.attObj};
-        return new ExportContainer(this.id, JSON.stringify(rawJSON));
+        const jwk = await window.crypto.subtle.exportKey('jwk', this.publicBackupKey);
+        const rawJSON = {parsedKey: jwk, attObj: this.backupDeviceAttObj};
+        return new ExportContainer(this.credentialId, JSON.stringify(rawJSON));
     }
 }
 
@@ -172,14 +169,14 @@ export class RecoveryKey {
             const bckKey = await BackupKey.get();
             const pubRk = await getCompatibleKeyFromCryptoKey(keyPair.publicKey);
             const pskSetup = await createPSKSetupExtensionOutput(bckKey);
-            const authData = await pubRk.generateAuthenticatorData('', 0, base64ToByteArray(bckKey.id, true), pskSetup);
+            const authData = await pubRk.generateAuthenticatorData('', 0, base64ToByteArray(bckKey.credentialId, true), pskSetup);
             const attObj = CBOR.encodeCanonical({
                 attStmt: new Map(),
                 authData,
                 fmt: 'none',
             });
 
-            const exportRk = await (new RecoveryKey(bckKey.id, keyPair.privateKey, attObj)).export();
+            const exportRk = await (new RecoveryKey(bckKey.credentialId, keyPair.privateKey, attObj)).export();
             container.push(exportRk);
 
             delSetup.push(new ExportContainer(exportRk.id, padString(byteArrayToBase64(attObj, true))));
@@ -268,7 +265,7 @@ async function parseJWK(jwk, usages): Promise<CryptoKey> {
 }
 
 export async function createPSKSetupExtensionOutput(backupKey: BackupKey): Promise<Uint8Array> {
-    const stpMsg = CBOR.encodeCanonical({attObj: base64ToByteArray(backupKey.attObj, true)});
+    const stpMsg = CBOR.encodeCanonical({bckpDvcAttObj: base64ToByteArray(backupKey.backupDeviceAttObj, true)});
     const extOutput = new Map([[PSK, stpMsg]]);
     return new Uint8Array(CBOR.encodeCanonical(extOutput));
 }

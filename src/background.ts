@@ -124,7 +124,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             }
             break;
         case 'setup':
-            setup().then(() => alert('Backup keys synchronized successfully!'));
+            setup().then(() => alert('Backup keys synchronized successfully!'), error => log.error('Setup' +
+            ' failed', error))
             break;
         case 'recovery':
             recovery().then(() => alert('Recovery finished successfully!'));

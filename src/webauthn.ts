@@ -24,15 +24,17 @@ export const processCredentialCreation = async (
     }
 
     let i;
-    for (i = 0; i < publicKeyCreationOptions.excludeCredentials.length; i++) {
-        const requestedCredential = publicKeyCreationOptions.excludeCredentials[i];
-        const credId = requestedCredential.id as ArrayBuffer;
-        const encCredId = byteArrayToBase64(new Uint8Array(credId), true);
+    if (publicKeyCreationOptions.excludeCredentials) {
+        for (i = 0; i < publicKeyCreationOptions.excludeCredentials.length; i++) {
+            const requestedCredential = publicKeyCreationOptions.excludeCredentials[i];
+            const credId = requestedCredential.id as ArrayBuffer;
+            const encCredId = byteArrayToBase64(new Uint8Array(credId), true);
 
-        const publicKeyCredentialSource = await PublicKeyCredentialSource.load(encCredId, pin).catch((_) => null);
+            const publicKeyCredentialSource = await PublicKeyCredentialSource.load(encCredId, pin).catch((_) => null);
 
-        if (publicKeyCredentialSource) {
-            throw new Error(`authenticator manages credential contained in excludeCredentials option.`);
+            if (publicKeyCredentialSource) {
+                throw new Error(`authenticator manages credential contained in excludeCredentials option.`);
+            }
         }
     }
 
@@ -51,7 +53,7 @@ export const processCredentialCreation = async (
     const bckpKey = await BackupKey.get();
     log.info('Use backup key', bckpKey);
 
-    const credId = base64ToByteArray(bckpKey.id, true);
+    const credId = base64ToByteArray(bckpKey.credentialId, true);
     const encCredId = byteArrayToBase64(credId, true);
 
     if (await PublicKeyCredentialSource.exits(encCredId)) {
