@@ -1,6 +1,6 @@
-import {base64ToByteArray, byteArrayToBase64, concatenate} from "../../utils";
-import {ivLength, keyExportFormat, saltLength} from "../../constants";
-import {getLogger} from "../../logging";
+import {base64ToByteArray, byteArrayToBase64, concatenate} from "./utils";
+import {ivLength, keyExportFormat, saltLength} from "./constants";
+import {getLogger} from "./logging";
 
 const log = getLogger('auth_storage');
 const PIN = "0000";
@@ -40,7 +40,7 @@ export class CredentialsMap {
     }
 
     public static async load(rpId: string): Promise<PublicKeyCredentialSource[]> {
-        log.debug(`Storing credential map entry for ${rpId}`);
+        log.debug(`Loading credential map entry for ${rpId}`);
         return new Promise<PublicKeyCredentialSource[]>(async (res, rej) => {
             chrome.storage.local.get({[rpId]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
@@ -59,6 +59,7 @@ export class CredentialsMap {
                     const credSrc =  await PublicKeyCredentialSource.import(exportJSON[i]);
                     credSrcs.push(credSrc);
                 }
+                log.debug('Loaded credential map entry successfully');
                 res(credSrcs);
             });
         });
@@ -76,7 +77,7 @@ export class CredentialsMap {
 
     public static async exits(rpId: string): Promise<boolean> {
         return new Promise<boolean>(async (res, rej) => {
-            chrome.storage.sync.get({[rpId]: null}, async (resp) => {
+            chrome.storage.local.get({[rpId]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform CredentialsMap.exits', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
@@ -90,6 +91,7 @@ export class CredentialsMap {
 
 export class PublicKeyCredentialSource {
     public static async import(json: any): Promise<PublicKeyCredentialSource> {
+        log.debug('Import PublicKeyCredentialSource', json);
         const _id = json.id;
         const _rpId = json.rpId;
         const _userHandle = json.userHandle;
@@ -122,7 +124,7 @@ export class PublicKeyCredentialSource {
             true,
             ['sign'],
         );
-        log.debug('Deserialized PublicKeyCredentialSource with id', _id)
+        log.debug('Imported PublicKeyCredentialSource with id', _id)
         return new PublicKeyCredentialSource(_id, _privateKey, _rpId, _userHandle);
     }
 
@@ -176,8 +178,8 @@ export class PublicKeyCredentialSource {
             type: this.type
         }
 
-        log.debug('Serialized PublicKeyCredentialSource with id', this.id)
-        return JSON.stringify(json);
+        log.debug('Exported PublicKeyCredentialSource with id', this.id)
+        return json;
     }
 }
 

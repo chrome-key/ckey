@@ -7,6 +7,7 @@ import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 import {processCredentialCreation, processCredentialRequest} from './webauthn';
 
 import {pskRecovery, pskSetup, setBackupDeviceBaseUrl} from './recovery';
+import {createPublicKeyCredential} from "./webauthn_client";
 
 const log = getLogger('background');
 
@@ -64,10 +65,10 @@ const create = async (msg, sender: chrome.runtime.MessageSender) => {
 
     try {
         const opts = webauthnParse(msg.options);
-        const credential = await processCredentialCreation(
+        const credential = await createPublicKeyCredential(
             origin,
-            opts.publicKey,
-            `${pin}`,
+            opts,
+            false,
         );
         return {
             credential: webauthnStringify(credential),
