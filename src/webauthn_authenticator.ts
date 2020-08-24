@@ -56,23 +56,26 @@ export class Authenticator {
         log.debug('Called authenticatorGetAssertion');
 
         // Step 2-7
-        // Note: The authenticator won't let the user select a public key credential source
-        let credSource: PublicKeyCredentialSource = null;
+        let credentialOptions: PublicKeyCredentialSource[] = [];
         if (allowCredentialDescriptorList) {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                credSource = await CredentialsMap.lookup(rpId, credId);
-                if (credSource != null) {
-                    break;
+                const cred = await CredentialsMap.lookup(rpId, credId);
+                if (cred != null) {
+                    credentialOptions.push(cred);
                 }
             }
         } else {
-            throw new Error(`No allowCredentialDescriptorList provided.`);
+            credentialOptions = credentialOptions.concat(await CredentialsMap.load(rpId));
         }
-        if (credSource == null) {
-            throw new Error(`Container does not manage any of the credentials in allowCredentialDescriptorList.`);
+        if (credentialOptions.length == 0) {
+            throw new Error(`Container does not manage any related credentials`);
         }
+        // Note: The authenticator won't let the user select a public key credential source
+        const credSource = credentialOptions[0];
+
+
         const userConsent = await userConsentCallback;
         if (!userConsent) {
             throw new Error(`no user consent`);
