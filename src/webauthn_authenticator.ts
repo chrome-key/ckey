@@ -44,7 +44,8 @@ export class Authenticator {
         return 0;
     }
 
-    public static async authenticatorGetAssertion(rpId: string,
+    public static async authenticatorGetAssertion(userConsentCallback: Promise<boolean>,
+                                                  rpId: string,
                                                   hash: Uint8Array,
                                                   requireUserPresence: boolean,
                                                   requireUserVerification: boolean,
@@ -72,7 +73,10 @@ export class Authenticator {
         if (credSource == null) {
             throw new Error(`Container does not manage any of the credentials in allowCredentialDescriptorList.`);
         }
-        // ToDo User consent
+        const userConsent = await userConsentCallback;
+        if (!userConsent) {
+            throw new Error(`no user consent`);
+        }
 
         // Step 8
         // ToDo Include Extension Processing
@@ -95,7 +99,8 @@ export class Authenticator {
         return new AssertionResponse(credSource.id, authenticatorData, signature, credSource.userHandle);
     }
 
-    public static async authenticatorMakeCredential(hash: Uint8Array,
+    public static async authenticatorMakeCredential(userConsentCallback: Promise<boolean>,
+                                             hash: Uint8Array,
                                              rpEntity: PublicKeyCredentialRpEntity,
                                              userEntity: PublicKeyCredentialUserEntity,
                                              requireResidentKey: boolean,
@@ -137,7 +142,10 @@ export class Authenticator {
         }
 
         // Step 6
-        // ToDo User Consent
+        const userConsent = await userConsentCallback;
+        if (!userConsent) {
+            throw new Error(`no user consent`);
+        }
 
         // Step 7
         const credentialId = this.createCredentialId();

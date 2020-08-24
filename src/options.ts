@@ -1,5 +1,4 @@
 import $ from 'jquery';
-import {getBackupDeviceBaseUrl} from "./recovery";
 
 $(() => {
     $('#Setup').on('click', function(evt: Event) {
@@ -9,7 +8,7 @@ $(() => {
         });
     });
 
-    $.when(getBackupDeviceBaseUrl()).then((url) => $('#BackupDeviceUrl').val(url));
+    //$.when(getBackupDeviceBaseUrl()).then((url) => $('#BackupDeviceUrl').val(url));
 
     $('#Recovery').on('click', function(evt: Event) {
         evt.preventDefault();

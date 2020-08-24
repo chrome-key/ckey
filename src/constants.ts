@@ -16,6 +16,8 @@ export const enabledIcons = {
     128: 'images/lock_enabled-128.png',
 };
 
-export const ES256_COSE = -7
-export const ES256 = "P-256"
-export const SHA256_COSE = 1
+export const ES256_COSE = -7;
+export const ES256 = "P-256";
+export const SHA256_COSE = 1;
+
+export const PIN = "0000";

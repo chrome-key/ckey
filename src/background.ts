@@ -4,9 +4,6 @@ import {getLogger} from './logging';
 
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 
-import {processCredentialCreation, processCredentialRequest} from './webauthn';
-
-import {pskRecovery, pskSetup, setBackupDeviceBaseUrl} from './recovery';
 import {createPublicKeyCredential, getPublicKeyCredential} from "./webauthn_client";
 
 const log = getLogger('background');
@@ -15,118 +12,97 @@ chrome.runtime.onInstalled.addListener(() => {
     log.info('Extension installed');
 });
 
-const pinProtectedCallbacks: { [tabId: number]: (pin: number) => void } = {};
+const userConsentCallbacks: { [tabId: number]: (consent: boolean) => void } = {};
 
-const requestPin = async (tabId: number, origin: string, newPin: boolean = true): Promise<number> => {
+const requestUserConsent = async (tabId: number, origin: string): Promise<boolean> => {
     const tabKey = `tab-${tabId}`;
-    chrome.storage.local.set({ [tabKey]: { origin, newPin } }, () => {
+    chrome.storage.local.set({ [tabKey]: { origin } }, () => {
         if (chrome.runtime.lastError) {
             throw new Error(`failed to store value: ${chrome.runtime.lastError}`);
         }
     });
     log.debug('setting popup for tab', tabId);
-    const cb: Promise<number> = new Promise((res, _) => {
-        pinProtectedCallbacks[tabId] = res;
+    const cb: Promise<boolean> = new Promise((res, _) => {
+        userConsentCallbacks[tabId] = res;
     });
     chrome.pageAction.setIcon({ tabId, path: enabledIcons });
     chrome.pageAction.setPopup({ tabId, popup: 'popup.html' });
     chrome.pageAction.show(tabId);
-    const pin = await cb;
+    const userConsent = await cb;
     chrome.storage.local.remove(tabKey);
     chrome.pageAction.setPopup({ tabId, popup: '' });
     chrome.pageAction.hide(tabId);
     chrome.pageAction.setIcon({ tabId, path: disabledIcons });
-    return pin;
+    return userConsent;
 };
 
-const setup = async () => {
-    log.debug('Setup called');
-    await pskSetup();
-};
-
-const recovery = async () => {
-    log.debug('Recovery called!');
-    await pskRecovery();
-};
-
-const saveOptions = async (msg) => {
-    log.debug('Save options called!');
-    setBackupDeviceBaseUrl(msg);
-};
-
-const create = async (msg, sender: chrome.runtime.MessageSender) => {
+const createCredential = async (msg, sender: chrome.runtime.MessageSender) => {
     if (!sender.tab || !sender.tab.id) {
-        log.debug('received create event without a tab ID');
+        log.debug('received createCredential event without a tab ID');
         return;
     }
-
+    const opts = webauthnParse(msg.options);
     const origin = getOriginFromUrl(sender.url);
-    const pin = await requestPin(sender.tab.id, origin);
+    const userConsentCB = requestUserConsent(sender.tab.id, origin);
 
     try {
-        const opts = webauthnParse(msg.options);
         const credential = await createPublicKeyCredential(
             origin,
             opts,
             true,
+            userConsentCB
         );
         return {
             credential: webauthnStringify(credential),
             requestID: msg.requestID,
-            type: 'create_response',
+            type: 'create_credential_response',
         };
     } catch (e) {
         log.error('failed to register credential', { errorType: `${(typeof e)}` }, e);
     }
 };
 
-const sign = async (msg, sender: chrome.runtime.MessageSender) => {
+const getCredential = async (msg, sender: chrome.runtime.MessageSender) => {
+    if (!sender.tab || !sender.tab.id) {
+        log.debug('received getCredential event without a tab ID');
+        return;
+    }
     const opts = webauthnParse(msg.options);
     const origin = getOriginFromUrl(sender.url);
-    const pin = await requestPin(sender.tab.id, origin);
+    const userConsentCB = requestUserConsent(sender.tab.id, origin);
 
     try {
-        const credential = await getPublicKeyCredential(origin, opts, true);
+        const credential = await getPublicKeyCredential(origin, opts, true, userConsentCB);
         return {
             credential: webauthnStringify(credential),
             requestID: msg.requestID,
-            type: 'sign_response',
+            type: 'get_credential_response',
         };
     } catch (e) {
-        log.error('failed to create assertion', { errorType: `${(typeof e)}` }, e);
+        log.error('failed to create credential assertion', { errorType: `${(typeof e)}` }, e);
     }
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
-        case 'create':
-            create(msg, sender).then(sendResponse);
+        case 'create_credential':
+            createCredential(msg, sender).then(sendResponse);
             break;
-        case 'sign':
-            sign(msg, sender).then(sendResponse);
+        case 'get_credential':
+            getCredential(msg, sender).then(sendResponse);
             break;
-        case 'pin':
-            const cb = pinProtectedCallbacks[msg.tabId];
+        case 'user_consent':
+            const cb = userConsentCallbacks[msg.tabId];
             if (!cb) {
-                log.warn(`Received pin for tab ${msg.tabId} but no callback registered`);
+                log.warn(`Received user consent for tab ${msg.tabId} but no callback registered`);
             } else {
-                cb(msg.pin);
-                delete (pinProtectedCallbacks[msg.tabId]);
+                cb(msg.userConsent);
+                delete (userConsentCallbacks[msg.tabId]);
             }
             break;
-        case 'setup':
-            setup().then(() => alert('Backup keys synchronized successfully!'), error => log.error('Setup' +
-            ' failed', error))
-            break;
-        case 'recovery':
-            recovery().then(() => alert('Recovery finished successfully!'));
-            break;
-        case 'saveOptions':
-            saveOptions(msg.url).then(() => alert('Saving options successfully!'));
-            break;
+
         default:
             sendResponse(null);
     }
-
     return true;
 });

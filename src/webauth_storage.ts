@@ -1,9 +1,9 @@
 import {base64ToByteArray, byteArrayToBase64, concatenate} from "./utils";
-import {ivLength, keyExportFormat, saltLength} from "./constants";
+import {ivLength, keyExportFormat, PIN, saltLength} from "./constants";
 import {getLogger} from "./logging";
 
 const log = getLogger('auth_storage');
-const PIN = "0000";
+
 
 export class CredentialsMap {
     public static async put(rpId: string, credSrc: PublicKeyCredentialSource): Promise<void> {

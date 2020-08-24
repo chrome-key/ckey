@@ -3,7 +3,6 @@ export function webauthnStringify(o) {
   return JSON.stringify(o, (k, v) => {
     if (v) {
       if (v.constructor.name === 'ArrayBuffer') {
-        // Because Buffer.from(ArrayBuffer) was not working on firefox
         v = new Uint8Array(v);
       }
       if (v.constructor.name === 'Uint8Array') {
@@ -16,6 +15,7 @@ export function webauthnStringify(o) {
     return v;
   });
 }
+
 export function webauthnParse(j) {
   return JSON.parse(j, (k, v) => {
     if (v && v.kr_ser_ty === 'Uint8Array') {

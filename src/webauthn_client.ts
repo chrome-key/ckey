@@ -8,7 +8,7 @@ const Get: FunctionType = "webauthn.get";
 
 const log = getLogger('webauthn_authenticator');
 
-export async function createPublicKeyCredential(origin: string, options: CredentialCreationOptions, sameOriginWithAncestors: boolean): Promise<PublicKeyCredential> {
+export async function createPublicKeyCredential(origin: string, options: CredentialCreationOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>): Promise<PublicKeyCredential> {
     log.debug('Called createPublicKeyCredential');
 
     // Step 2
@@ -17,7 +17,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     }
 
     // Step 7
-    const rpID = options.publicKey.rp.id || getDomainFromOrigin(origin);
+    options.publicKey.rp.id = options.publicKey.rp.id || getDomainFromOrigin(origin);
 
     // Step 11
     // ToDo clientExtensions + authenticatorExtensions
@@ -33,7 +33,8 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     const userVerification = options.publicKey.authenticatorSelection.requireUserVerification === "required";
     const userPresence = !userVerification;
 
-    const attObjWrapper = await Authenticator.authenticatorMakeCredential(clientDataHash,
+    const attObjWrapper = await Authenticator.authenticatorMakeCredential(userConsentCallback,
+        clientDataHash,
         options.publicKey.rp,
         options.publicKey.user,
         options.publicKey.authenticatorSelection.requireResidentKey,
@@ -56,7 +57,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     } as PublicKeyCredential;
 }
 
-export async function getPublicKeyCredential(origin: string, options: CredentialRequestOptions, sameOriginWithAncestors: boolean) {
+export async function getPublicKeyCredential(origin: string, options: CredentialRequestOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>) {
     // Step 2
     if (!sameOriginWithAncestors) {
         throw new Error(`sameOriginWithAncestors has to be true`);
@@ -78,7 +79,8 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     // Step 18: Simplified, just for 1 authenticator
     const userVerification = options.publicKey.userVerification === "required";
     const userPresence = !userVerification;
-    const assertionCreationData = await Authenticator.authenticatorGetAssertion(options.publicKey.rpId,
+    const assertionCreationData = await Authenticator.authenticatorGetAssertion(userConsentCallback,
+        rpID,
         clientDataHash,
         userPresence,
         userVerification,
