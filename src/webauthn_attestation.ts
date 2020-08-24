@@ -45,7 +45,6 @@ async function getAttestationPrivateKey(): Promise<ICOSECompatibleKey> {
 
 export function getAttestationCertificate(): Uint8Array {
     const pem = require('pem-file')
-    const decPem = pem.decode(Buffer.from(AttestationCertificatePEM));
-    return decPem;
+    return pem.decode(Buffer.from(AttestationCertificatePEM));
 }
 

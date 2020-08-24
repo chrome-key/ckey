@@ -131,17 +131,17 @@ export class PublicKeyCredentialSource {
     public id: string
     public privateKey: CryptoKey
     public rpId: string
-    public userHandle: string
+    public userHandle: Uint8Array
     public type: string
 
-    constructor(id: string, privateKey: CryptoKey, rpId: string, userHandle?: string) {
+    constructor(id: string, privateKey: CryptoKey, rpId: string, userHandle?: Uint8Array) {
         this.id = id;
         this.privateKey = privateKey;
         this.rpId = rpId;
         if (userHandle) {
             this.userHandle = userHandle;
         } else {
-            this.userHandle = "";
+            this.userHandle = null;
         }
         this.type = "public-key";
     }

@@ -18,6 +18,20 @@ export class AttestationObjectWrapper {
     }
 }
 
+export class AssertionResponse {
+    public authenticatorData: Uint8Array
+    public signature: Uint8Array
+    public userHandle: Uint8Array
+    public credentialId: string
+
+    constructor(credId: string, authData: Uint8Array, sign: Uint8Array, userHandle: Uint8Array) {
+        this.authenticatorData = authData;
+        this.signature = sign;
+        this.userHandle = userHandle;
+        this.credentialId = credId;
+    }
+}
+
 export class Authenticator {
     private static AAGUID: Uint8Array = new Uint8Array([
         1214244733, 1205845608, 840015201, 3897052717,
@@ -28,6 +42,57 @@ export class Authenticator {
 
     private static getSignatureCounter(): number {
         return 0;
+    }
+
+    public static async authenticatorGetAssertion(rpId: string,
+                                                  hash: Uint8Array,
+                                                  requireUserPresence: boolean,
+                                                  requireUserVerification: boolean,
+                                                  allowCredentialDescriptorList?: PublicKeyCredentialDescriptor[],
+                                                  extensions?: any
+                                                  ): Promise<AssertionResponse> {
+
+        log.debug('Called authenticatorGetAssertion');
+
+        // Step 2-7
+        // Note: The authenticator won't let the user select a public key credential source
+        let credSource: PublicKeyCredentialSource = null;
+        if (allowCredentialDescriptorList) {
+            for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
+                const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
+                const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
+                credSource = await CredentialsMap.lookup(rpId, credId);
+                if (credSource != null) {
+                    break;
+                }
+            }
+        } else {
+            throw new Error(`No allowCredentialDescriptorList provided.`);
+        }
+        if (credSource == null) {
+            throw new Error(`Container does not manage any of the credentials in allowCredentialDescriptorList.`);
+        }
+        // ToDo User consent
+
+        // Step 8
+        // ToDo Include Extension Processing
+        const processedExtensions = undefined;
+
+        // Step 9: The current version does not increment counter
+
+        // Step 10
+        const authenticatorData = await this.generateAuthenticatorData(rpId,
+            this.getSignatureCounter(), undefined, processedExtensions);
+
+        // Step 11
+        const concatData = new Uint8Array(authenticatorData.length + hash.length);
+        concatData.set(authenticatorData);
+        concatData.set(hash, authenticatorData.length);
+        const prvKey = await ECDSA.fromKey(credSource.privateKey);
+        const signature = await prvKey.sign(concatData);
+
+        // Step 13
+        return new AssertionResponse(credSource.id, authenticatorData, signature, credSource.userHandle);
     }
 
     public static async authenticatorMakeCredential(hash: Uint8Array,
@@ -59,25 +124,26 @@ export class Authenticator {
             for (let i = 0; i < excludeCredentialDescriptorList.length; i++) {
                 const rawCredId = excludeCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                if (credMapEntries.findIndex(x => x.id == credId) >= 0) {
+                if (credMapEntries.findIndex(x =>
+                    (x.id == credId) && (x.type === excludeCredentialDescriptorList[i].type)) >= 0) {
                     throw new Error(`authenticator manages credential of excludeCredentialDescriptorList`);
                 }
             }
         }
-
-        // Step 6
-        // ToDo User Consent
 
         // Step 5
         if (requireUserVerification) {
             throw new Error(`authenticator does not support user verification`);
         }
 
+        // Step 6
+        // ToDo User Consent
+
         // Step 7
-        const credentialId = this.createCredentialId()
+        const credentialId = this.createCredentialId();
         const keyPair = await ECDSA.createECDSAKeyPair();
-        const credSrc = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpEntity.id) // No User Handle
-        await CredentialsMap.put(rpEntity.id, credSrc);
+        const credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpEntity.id); // No user Handle
+        await CredentialsMap.put(rpEntity.id, credentialSource);
 
         // Step 9
         // ToDo Include Extension Processing

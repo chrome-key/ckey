@@ -7,7 +7,7 @@ import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 import {processCredentialCreation, processCredentialRequest} from './webauthn';
 
 import {pskRecovery, pskSetup, setBackupDeviceBaseUrl} from './recovery';
-import {createPublicKeyCredential} from "./webauthn_client";
+import {createPublicKeyCredential, getPublicKeyCredential} from "./webauthn_client";
 
 const log = getLogger('background');
 
@@ -68,7 +68,7 @@ const create = async (msg, sender: chrome.runtime.MessageSender) => {
         const credential = await createPublicKeyCredential(
             origin,
             opts,
-            false,
+            true,
         );
         return {
             credential: webauthnStringify(credential),
@@ -76,12 +76,7 @@ const create = async (msg, sender: chrome.runtime.MessageSender) => {
             type: 'create_response',
         };
     } catch (e) {
-        if (e instanceof DOMException) {
-            const { code, message, name } = e;
-            log.error('failed to import key due to DOMException', { code, message, name }, e);
-        } else {
-            log.error('failed to import key', { errorType: `${(typeof e)}` }, e);
-        }
+        log.error('failed to register credential', { errorType: `${(typeof e)}` }, e);
     }
 };
 
@@ -91,19 +86,14 @@ const sign = async (msg, sender: chrome.runtime.MessageSender) => {
     const pin = await requestPin(sender.tab.id, origin);
 
     try {
-        const credential = await processCredentialRequest(origin, opts.publicKey, `${pin}`);
+        const credential = await getPublicKeyCredential(origin, opts, true);
         return {
             credential: webauthnStringify(credential),
             requestID: msg.requestID,
             type: 'sign_response',
         };
     } catch (e) {
-        if (e instanceof DOMException) {
-            const { code, message, name } = e;
-            log.error('failed to sign due DOMException', { code, message, name }, e);
-        } else {
-            log.error('failed to sign', { errorType: `${(typeof e)}` }, e);
-        }
+        log.error('failed to create assertion', { errorType: `${(typeof e)}` }, e);
     }
 };
 
