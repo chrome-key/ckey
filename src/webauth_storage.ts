@@ -1,14 +1,106 @@
 import {base64ToByteArray, byteArrayToBase64, concatenate} from "./utils";
-import {ivLength, keyExportFormat, PIN, saltLength} from "./constants";
+import {BACKUP_KEY, BD_ENDPOINT, DEFAULT_BD_ENDPOINT, ivLength, keyExportFormat, PIN, saltLength} from "./constants";
 import {getLogger} from "./logging";
+import {BackupKey} from "./webauthn_psk";
 
 const log = getLogger('auth_storage');
 
+export class PSKStorage {
+    public static async getBDEndpoint(): Promise<string> {
+        return new Promise<string>(async (res, rej) => {
+            chrome.storage.local.get({[BD_ENDPOINT]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.getBDEndpoint', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                }
+
+                if (resp[BACKUP_KEY] == null) {
+                    log.warn(`No endpoint found, use default endpoint`);
+                    res(DEFAULT_BD_ENDPOINT);
+                }
+                log.debug('Loaded BD endpoint successfully');
+                res(resp[BACKUP_KEY]);
+            });
+        });
+    }
+
+    public static async setBDEndpoint(endpoint: string): Promise<void> {
+        log.debug('Set BD endpoint to', endpoint);
+        return new Promise<void>(async (res, rej) => {
+            chrome.storage.local.set({[BD_ENDPOINT]: endpoint}, () => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.setBDEndpoint', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                } else {
+                    res();
+                }
+            });
+        });
+    }
+
+    public static async storeBackupKeys(backupKeys: BackupKey[], override: boolean = false): Promise<void> {
+        log.debug(`Storing backup keys`);
+        const backupKeysExists = await this.existBackupKeys();
+        if (backupKeysExists && !override) {
+            log.debug('Backup keys already exist. Update entry.');
+            const entries = await this.loadBackupKeys();
+            backupKeys = entries.concat(backupKeys);
+        }
+
+        let exportJSON = JSON.stringify(backupKeys);
+        return new Promise<void>(async (res, rej) => {
+            chrome.storage.local.set({[BACKUP_KEY]: exportJSON}, () => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.storeBackupKeys', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                } else {
+                    res();
+                }
+            });
+        });
+    };
+
+    public static async loadBackupKeys(): Promise<BackupKey[]> {
+        log.debug(`Loading backup keys`);
+        return new Promise<BackupKey[]>(async (res, rej) => {
+            chrome.storage.local.get({[BACKUP_KEY]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.loadBackupKeys', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                }
+
+                if (resp[BACKUP_KEY] == null) {
+                    log.warn(`No backup keys found`);
+                    res([]);
+                }
+
+                const backupKeys = await JSON.parse(resp[BACKUP_KEY]);
+                log.debug('Loaded backup keys successfully');
+                res(backupKeys);
+            });
+        });
+    }
+
+    private static async existBackupKeys(): Promise<boolean> {
+        return new Promise<boolean>(async (res, rej) => {
+            chrome.storage.local.get({[BACKUP_KEY]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.existBackupKeys', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                } else {
+                    res(!(resp[BACKUP_KEY] == null));
+                }
+            });
+        });
+    };
+}
 
 export class CredentialsMap {
     public static async put(rpId: string, credSrc: PublicKeyCredentialSource): Promise<void> {
         log.debug(`Storing credential map entry for ${rpId}`);
-        const mapEntryExists = await this.exits(rpId);
+        const mapEntryExists = await this.exists(rpId);
         let credSrcs: PublicKeyCredentialSource[];
         if (mapEntryExists) {
             log.debug('Credential map entry does already exist. Update entry.');
@@ -75,11 +167,11 @@ export class CredentialsMap {
         }
     }
 
-    public static async exits(rpId: string): Promise<boolean> {
+    public static async exists(rpId: string): Promise<boolean> {
         return new Promise<boolean>(async (res, rej) => {
             chrome.storage.local.get({[rpId]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
-                    log.error('Could not perform CredentialsMap.exits', chrome.runtime.lastError.message);
+                    log.error('Could not perform CredentialsMap.exists', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
                 } else {
                     res(!(resp[rpId] == null));
@@ -91,7 +183,6 @@ export class CredentialsMap {
 
 export class PublicKeyCredentialSource {
     public static async import(json: any): Promise<PublicKeyCredentialSource> {
-        log.debug('Import PublicKeyCredentialSource', json);
         const _id = json.id;
         const _rpId = json.rpId;
         const _userHandle = json.userHandle;
@@ -124,7 +215,7 @@ export class PublicKeyCredentialSource {
             true,
             ['sign'],
         );
-        log.debug('Imported PublicKeyCredentialSource with id', _id)
+
         return new PublicKeyCredentialSource(_id, _privateKey, _rpId, _userHandle);
     }
 
@@ -178,7 +269,6 @@ export class PublicKeyCredentialSource {
             type: this.type
         }
 
-        log.debug('Exported PublicKeyCredentialSource with id', this.id)
         return json;
     }
 }

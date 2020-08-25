@@ -4,7 +4,8 @@ import {base64ToByteArray, byteArrayToBase64, counterToBytes} from "./utils";
 import * as CBOR from 'cbor';
 import {createAttestationSignature, getAttestationCertificate} from "./webauthn_attestation";
 import {getLogger} from "./logging";
-import {ES256_COSE} from "./constants";
+import {ES256_COSE, PSK_EXTENSION_IDENTIFIER} from "./constants";
+import {PSK} from "./webauthn_psk";
 
 const log = getLogger('webauthn_authenticator');
 
@@ -111,7 +112,7 @@ export class Authenticator {
                                              requireUserVerification: boolean,
                                              credTypesAndPubKeyAlgs:  PublicKeyCredentialParameters[],
                                              excludeCredentialDescriptorList?: PublicKeyCredentialDescriptor[],
-                                             extensions?: any): Promise<AttestationObjectWrapper> {
+                                             extensions?: Map<string, string>): Promise<AttestationObjectWrapper> {
         log.debug('Called authenticatorMakeCredential');
 
         // Step 2
@@ -157,8 +158,22 @@ export class Authenticator {
         await CredentialsMap.put(rpEntity.id, credentialSource);
 
         // Step 9
-        // ToDo Include Extension Processing
-        const extensionData = undefined;
+        let processedExtensions = undefined;
+        if (extensions) {
+            log.debug(extensions);
+            if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
+                log.debug('PSK requested');
+                const pskOutPut = await PSK.authenticatorGetCredentialExtensionOutput();
+                log.debug('PSK extension output created');
+                // ToDo Check if input is cbor encoded null
+                processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
+                // ToDo Return credId from PSK to replace created credential id
+            }
+        }
+        if (processedExtensions) {
+            processedExtensions =  new Uint8Array(CBOR.encodeCanonical(processedExtensions));
+        }
+
 
         // Step 10
         const sigCnt = this.getSignatureCounter();
@@ -168,7 +183,7 @@ export class Authenticator {
         const attestedCredentialData = await this.generateAttestedCredentialData(rawCredentialId, keyPair);
 
         // Step 12
-        const authenticatorData = await this.generateAuthenticatorData(rpEntity.id, sigCnt, attestedCredentialData, extensionData);
+        const authenticatorData = await this.generateAuthenticatorData(rpEntity.id, sigCnt, attestedCredentialData, processedExtensions);
 
         // Step 13
         const attObj = await this.generateAttestationObject(hash, authenticatorData);

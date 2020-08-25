@@ -1,12 +1,14 @@
+import * as CBOR from 'cbor';
 import {base64ToByteArray, byteArrayToBase64, getDomainFromOrigin} from "./utils";
 import {Authenticator} from "./webauthn_authenticator";
 import {getLogger} from "./logging";
+import {PSK_EXTENSION_IDENTIFIER} from "./constants";
 
 type FunctionType = string;
 const Create: FunctionType = "webauthn.create";
 const Get: FunctionType = "webauthn.get";
 
-const log = getLogger('webauthn_authenticator');
+const log = getLogger('webauthn_client');
 
 export async function createPublicKeyCredential(origin: string, options: CredentialCreationOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>): Promise<PublicKeyCredential> {
     log.debug('Called createPublicKeyCredential');
@@ -20,7 +22,19 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     options.publicKey.rp.id = options.publicKey.rp.id || getDomainFromOrigin(origin);
 
     // Step 11
-    // ToDo clientExtensions + authenticatorExtensions
+    const clientExtensions = undefined; // ToDo clientExtensions
+    let authenticatorExtensions = undefined;
+    if (options.publicKey.extensions) {
+        const reqExt: any = options.publicKey.extensions;
+        if (reqExt.hasOwnProperty(PSK_EXTENSION_IDENTIFIER)) {
+            log.debug('PSK extension requested');
+            if (reqExt[PSK_EXTENSION_IDENTIFIER] == true) {
+                log.debug('PSK extension has valid client input');
+                const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
+                authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
+            }
+        }
+    }
 
     // Step 13 + 14
     const clientDataJSON = generateClientDataJSON(Create, options.publicKey.challenge as ArrayBuffer, origin);
@@ -30,18 +44,24 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     const clientDataHash = new Uint8Array(clientDataHashDigest);
 
     // Step 20: Simplified, just for 1 authenticator
-    const userVerification = options.publicKey.authenticatorSelection.requireUserVerification === "required";
+    let userVerification = false;
+    let residentKey = false;
+    if (options.publicKey.authenticatorSelection) {
+        userVerification = options.publicKey.authenticatorSelection.requireUserVerification === "required";
+        residentKey = options.publicKey.authenticatorSelection.requireResidentKey;
+    }
     const userPresence = !userVerification;
 
     const attObjWrapper = await Authenticator.authenticatorMakeCredential(userConsentCallback,
         clientDataHash,
         options.publicKey.rp,
         options.publicKey.user,
-        options.publicKey.authenticatorSelection.requireResidentKey,
+        residentKey,
         userPresence,
         userVerification,
         options.publicKey.pubKeyCredParams,
-        options.publicKey.excludeCredentials);
+        options.publicKey.excludeCredentials,
+        authenticatorExtensions);
 
     log.debug('Received attestation object');
 

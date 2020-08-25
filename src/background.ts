@@ -5,6 +5,7 @@ import {getLogger} from './logging';
 import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 
 import {createPublicKeyCredential, getPublicKeyCredential} from "./webauthn_client";
+import {PSK} from "./webauthn_psk";
 
 const log = getLogger('background');
 
@@ -83,6 +84,22 @@ const getCredential = async (msg, sender: chrome.runtime.MessageSender) => {
     }
 };
 
+const pskSetup = async () => {
+    try {
+        await PSK.setup();
+    } catch (e) {
+        log.error('failed to setup psk', { errorType: `${(typeof e)}` }, e);
+    }
+};
+
+const pskOptions = async (url) => {
+    try {
+        await PSK.setOptions(url);
+    } catch (e) {
+        log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e);
+    }
+};
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
         case 'create_credential':
@@ -90,6 +107,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
         case 'get_credential':
             getCredential(msg, sender).then(sendResponse);
+            break;
+        case 'psk_setup':
+            pskSetup().then(() => alert('PSK setup was successfully!'), null);
+            break;
+        case 'psk_options':
+            pskOptions(msg.url).then(() => alert('PSK options was successfully!'), null);
             break;
         case 'user_consent':
             const cb = userConsentCallbacks[msg.tabId];

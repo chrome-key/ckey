@@ -1,26 +1,27 @@
 import $ from 'jquery';
+import {PSK} from "./webauthn_psk";
 
 $(() => {
     $('#Setup').on('click', function(evt: Event) {
         evt.preventDefault();
         chrome.runtime.sendMessage({
-            type: 'setup',
+            type: 'psk_setup',
         });
     });
 
-    //$.when(getBackupDeviceBaseUrl()).then((url) => $('#BackupDeviceUrl').val(url));
+    $.when(PSK.bdDeviceUrl()).then((url) => $('#BackupDeviceUrl').val(url));
 
     $('#Recovery').on('click', function(evt: Event) {
         evt.preventDefault();
         chrome.runtime.sendMessage({
-            type: 'recovery',
+            type: 'psk_recovery',
         });
     });
 
     $('#SaveBackupDeviceUrl').on('click', function(evt: Event) {
         evt.preventDefault();
         chrome.runtime.sendMessage({
-            type: 'saveOptions',
+            type: 'psk_options',
             url: $('#BackupDeviceUrl').val(),
         });
     });
