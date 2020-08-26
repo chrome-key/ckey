@@ -22,7 +22,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     options.publicKey.rp.id = options.publicKey.rp.id || getDomainFromOrigin(origin);
 
     // Step 11
-    const clientExtensions = undefined; // ToDo clientExtensions
+    let clientExtensions = undefined;
     let authenticatorExtensions = undefined;
     if (options.publicKey.extensions) {
         const reqExt: any = options.publicKey.extensions;
@@ -32,6 +32,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
                 log.debug('PSK extension has valid client input');
                 const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
                 authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
+                clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true};
             }
         }
     }
@@ -66,7 +67,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     log.debug('Received attestation object');
 
     return {
-        getClientExtensionResults: () => ({}),
+        getClientExtensionResults: () => (clientExtensions),
         id: attObjWrapper.credentialId,
         rawId: base64ToByteArray(attObjWrapper.credentialId, true),
         response: {
@@ -87,7 +88,7 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     const rpID = options.publicKey.rpId || getDomainFromOrigin(origin);
 
     // Step 8 + 9
-    // ToDo Each authenticator extension is an client extension!
+    // ToDo Authenticator Extension
 
     // Step 10 + 11
     const clientDataJSON = generateClientDataJSON(Get, options.publicKey.challenge as ArrayBuffer, origin);

@@ -55,6 +55,7 @@ const createCredential = async (msg, sender: chrome.runtime.MessageSender) => {
         );
         return {
             credential: webauthnStringify(credential),
+            clientExtensionResults: credential.getClientExtensionResults(),
             requestID: msg.requestID,
             type: 'create_credential_response',
         };

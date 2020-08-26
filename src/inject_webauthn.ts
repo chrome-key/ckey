@@ -25,7 +25,8 @@ const log = getLogger('inject_webauthn');
     const webauthnResponse = await cb;
     // Because "options" contains functions we must stringify it, otherwise object cloning is illegal.
     const credential = webauthnParse(webauthnResponse.resp.credential);
-    credential.getClientExtensionResults = () => ({}); // ToDo Return actual client extension result
+    credential.getClientExtensionResults = () => (webauthnResponse.resp.clientExtensionResults);
+    // extension result
     credential.__proto__ = window['PublicKeyCredential'].prototype;
     return credential;
   };
