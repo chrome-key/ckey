@@ -18,6 +18,7 @@ export class PSKStorage {
                 if (resp[BACKUP_KEY] == null) {
                     log.warn(`No endpoint found, use default endpoint`);
                     res(DEFAULT_BD_ENDPOINT);
+                    return;
                 }
                 log.debug('Loaded BD endpoint successfully');
                 res(resp[BACKUP_KEY]);
@@ -32,6 +33,7 @@ export class PSKStorage {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.setBDEndpoint', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
+                    return;
                 } else {
                     res();
                 }
@@ -54,6 +56,7 @@ export class PSKStorage {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.storeBackupKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
+                    return;
                 } else {
                     res();
                 }
@@ -74,6 +77,7 @@ export class PSKStorage {
                 if (resp[BACKUP_KEY] == null) {
                     log.warn(`No backup keys found`);
                     res([]);
+                    return;
                 }
 
                 const backupKeys = await JSON.parse(resp[BACKUP_KEY]);
@@ -89,6 +93,7 @@ export class PSKStorage {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.existBackupKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
+                    return;
                 } else {
                     res(!(resp[BACKUP_KEY] == null));
                 }
@@ -124,6 +129,7 @@ export class CredentialsMap {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform CredentialsMap.put', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
+                    return;
                 } else {
                     res();
                 }
@@ -143,6 +149,7 @@ export class CredentialsMap {
                 if (resp[rpId] == null) {
                     log.warn(`CredentialsMap entry ${rpId} not found`);
                     res([]);
+                    return;
                 }
 
                 const exportJSON = await JSON.parse(resp[rpId]);
@@ -173,6 +180,7 @@ export class CredentialsMap {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform CredentialsMap.exists', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
+                    return;
                 } else {
                     res(!(resp[rpId] == null));
                 }

@@ -152,9 +152,9 @@ export class Authenticator {
         }
 
         // Step 7
-        const credentialId = this.createCredentialId();
+        let credentialId = this.createCredentialId();
         const keyPair = await ECDSA.createECDSAKeyPair();
-        const credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpEntity.id); // No user Handle
+        let credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpEntity.id); // No user Handle
         await CredentialsMap.put(rpEntity.id, credentialSource);
 
         // Step 9
@@ -163,11 +163,17 @@ export class Authenticator {
             log.debug(extensions);
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
                 log.debug('PSK requested');
-                const pskOutPut = await PSK.authenticatorGetCredentialExtensionOutput();
-                log.debug('PSK extension output created');
-                // ToDo Check if input is cbor encoded null
-                processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
-                // ToDo Return credId from PSK to replace created credential id
+                if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null
+                    log.warn('PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
+                } else {
+                    const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();
+                    processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
+                    credentialId = backupKeyCredentialId;
+                    credentialSource.id = credentialId;
+                    await CredentialsMap.put(rpEntity.id, credentialSource);
+                    log.debug('Processed PSK');
+                }
+
             }
         }
         if (processedExtensions) {

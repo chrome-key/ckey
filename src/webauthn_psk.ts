@@ -9,7 +9,7 @@ const log = getLogger('webauthn_psk');
 
 export class BackupKey {
     public credentialId: string;
-    public bdAttObj: string; // base64 URL
+    public bdAttObj: string; // base64 URL with padding
 
     constructor(credId: string, attObj: string) {
         this.credentialId = credId;
@@ -38,7 +38,7 @@ export class PSK {
                 let i;
                 const backupKeys = new Array<BackupKey>();
                 for (i = 0; i < setupResponse.length; ++i) {
-                    const backupKey = new BackupKey(setupResponse[i].attObj, setupResponse[i].credId);
+                    const backupKey = new BackupKey(setupResponse[i].credId, setupResponse[i].attObj);
                     backupKeys.push(backupKey);
                 }
                 log.debug('Loaded backup keys', backupKeys);
@@ -47,9 +47,9 @@ export class PSK {
             });
     }
 
-    public static async authenticatorGetCredentialExtensionOutput(): Promise<Uint8Array> {
+    public static async authenticatorMakeCredentialExtensionOutput(): Promise<[string, Uint8Array]> {
         const backupKey = await this.popBackupKey();
-        return CBOR.encodeCanonical({bckpDvcAttObj: base64ToByteArray(backupKey.bdAttObj, true)});
+        return [backupKey.credentialId, CBOR.encodeCanonical({bckpDvcAttObj: base64ToByteArray(backupKey.bdAttObj, true)})];
     }
 
     private static async popBackupKey(): Promise<BackupKey> {
@@ -59,12 +59,12 @@ export class PSK {
         }
         const backupKey = backupKeys.pop();
         log.debug('Pop backup key', backupKey);
-        await PSKStorage.storeBackupKeys(backupKeys);
+        await PSKStorage.storeBackupKeys(backupKeys, true);
 
         return backupKey;
     }
 
-    public static async authenticatorMakeCredentialExtensionOutput(): Promise<Uint8Array> {
+    public static async authenticatorGetCredentialExtensionOutput(): Promise<Uint8Array> {
         return Promise.resolve(undefined); // ToDo Implement
     }
 }
