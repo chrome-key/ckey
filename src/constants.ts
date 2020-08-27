@@ -26,3 +26,4 @@ export const PSK_EXTENSION_IDENTIFIER = 'psk';
 export const BACKUP_KEY = 'backup_key';
 export const BD_ENDPOINT = 'bd_endpoint';
 export const DEFAULT_BD_ENDPOINT = 'http://localhost:8005';
+export const RECOVERY_KEY = 'recovery_key';

@@ -200,12 +200,12 @@ export class Authenticator {
 
     }
 
-    private static async generateAttestedCredentialData(credentialId: Uint8Array, keyPair: ICOSECompatibleKey): Promise<Uint8Array> {
+    private static async generateAttestedCredentialData(credentialId: Uint8Array, publicKey: ICOSECompatibleKey): Promise<Uint8Array> {
         const aaguid = this.AAGUID.slice(0, 16);
         const credIdLen = new Uint8Array(2);
         credIdLen[0] = (credentialId.length >> 8) & 0xff;
         credIdLen[1] = credentialId.length & 0xff;
-        const coseKey = await keyPair.toCOSE(keyPair.publicKey);
+        const coseKey = await publicKey.toCOSE(publicKey.publicKey);
         const encodedKey = new Uint8Array(CBOR.encodeCanonical(coseKey));
 
         const attestedCredentialDataLength = aaguid.length + credIdLen.length + credentialId.length + encodedKey.length;

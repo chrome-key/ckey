@@ -13,7 +13,7 @@ export interface ICOSECompatibleKey {
 
 export class ECDSA implements ICOSECompatibleKey {
     public algorithm: number
-    public privateKey: CryptoKey
+    public privateKey?: CryptoKey
     public publicKey?: CryptoKey
 
     public static async fromKey(key: CryptoKey): Promise<ECDSA> {

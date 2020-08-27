@@ -93,6 +93,14 @@ const pskSetup = async () => {
     }
 };
 
+const pskRecovery = async () => {
+    try {
+        await PSK.recoverySetup();
+    } catch (e) {
+        log.error('failed to setup psk recovery', { errorType: `${(typeof e)}` }, e);
+    }
+}
+
 const pskOptions = async (url) => {
     try {
         await PSK.setOptions(url);
@@ -111,6 +119,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
         case 'psk_setup':
             pskSetup().then(() => alert('PSK setup was successfully!'), null);
+            break;
+        case 'psk_recovery':
+            pskRecovery().then(() => alert('PSK recovery setup was successfully!'), null);
             break;
         case 'psk_options':
             pskOptions(msg.url).then(() => alert('PSK options was successfully!'), null);
