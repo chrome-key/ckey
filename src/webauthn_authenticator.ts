@@ -1,5 +1,5 @@
 import {ECDSA, ICOSECompatibleKey} from "./webauthn_crypto";
-import {CredentialsMap, PublicKeyCredentialSource} from "./webauth_storage";
+import {CredentialsMap, PSKStorage, PublicKeyCredentialSource} from "./webauth_storage";
 import {base64ToByteArray, byteArrayToBase64, counterToBytes} from "./utils";
 import * as CBOR from 'cbor';
 import {createAttestationSignature, getAttestationCertificate} from "./webauthn_attestation";
@@ -51,13 +51,14 @@ export class Authenticator {
                                                   requireUserPresence: boolean,
                                                   requireUserVerification: boolean,
                                                   allowCredentialDescriptorList?: PublicKeyCredentialDescriptor[],
-                                                  extensions?: any
+                                                  extensions?: Map<string, string>
                                                   ): Promise<AssertionResponse> {
 
         log.debug('Called authenticatorGetAssertion');
 
         // Step 2-7
         let credentialOptions: PublicKeyCredentialSource[] = [];
+        let isRecovery: [boolean, string] = [false, ""];
         if (allowCredentialDescriptorList) {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
@@ -71,10 +72,26 @@ export class Authenticator {
             credentialOptions = credentialOptions.concat(await CredentialsMap.load(rpId));
         }
         if (credentialOptions.length == 0) {
-            throw new Error(`Container does not manage any related credentials`);
+            // Check if there is any recovery key that matches the provided credential descriptors
+            for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
+                const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
+                const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
+                const recExists = await PSKStorage.recoveryKeyExists(credId);
+                if (recExists) {
+                    log.info('Recovery detected for', credId);
+                    isRecovery = [true, credId];
+                    break;
+                }
+            }
+            if (!isRecovery) {
+                throw new Error(`Container does not manage any related credentials`);
+            }
         }
         // Note: The authenticator won't let the user select a public key credential source
-        const credSource = credentialOptions[0];
+        let credSource;
+        if (!isRecovery[0]) {
+            credSource = credentialOptions[0];
+        }
 
 
         const userConsent = await userConsentCallback;
@@ -83,10 +100,29 @@ export class Authenticator {
         }
 
         // Step 8
-        // ToDo Include Extension Processing
-        const processedExtensions = undefined;
+        let processedExtensions = undefined;
+        if (extensions) {
+            log.debug(extensions);
+            if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
+                log.debug('PSK requested');
+                const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
+                const pskInput = await CBOR.decode(new Buffer(rawPskInput));
+                log.debug('PSK input', pskInput);
+                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(null, pskInput.hash, rpId);
+                processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutput]]);
+                credSource = await CredentialsMap.lookup(rpId, newCredId);
+                if (credSource == null) {
+                    throw new Error('New credential source missing');
+                }
+                log.debug('Processed PSK');
 
-        // Step 9: The current version does not increment counter
+            }
+        }
+        if (processedExtensions) {
+            processedExtensions =  new Uint8Array(CBOR.encodeCanonical(processedExtensions));
+        }
+
+        // Step 9: The current version does not increment the counter
 
         // Step 10
         const authenticatorData = await this.generateAuthenticatorData(rpId,
@@ -151,9 +187,10 @@ export class Authenticator {
             throw new Error(`no user consent`);
         }
 
-        // Step 7
-        let credentialId = this.createCredentialId();
-        const keyPair = await ECDSA.createECDSAKeyPair();
+        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, undefined, extensions);
+
+        /*let credentialId = this.createCredentialId();
+
         let credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpEntity.id); // No user Handle
         await CredentialsMap.put(rpEntity.id, credentialSource);
 
@@ -196,8 +233,61 @@ export class Authenticator {
 
         // Return value is not 1:1 WebAuthn conform
         log.debug('Created credential', credentialId)
-        return (new AttestationObjectWrapper(credentialId, attObj));
+        return (new AttestationObjectWrapper(credentialId, attObj));*/
 
+    }
+
+    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>): Promise<AttestationObjectWrapper> {
+        // Step 7
+        if (!(keyPair)) {
+            log.debug('No key pair provided, create new one.');
+            keyPair = await ECDSA.createECDSAKeyPair();
+        }
+        let credentialId = this.createCredentialId();
+        let credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpId); // No
+        // user Handle
+        await CredentialsMap.put(rpId, credentialSource);
+
+        // Step 9
+        let processedExtensions = undefined;
+        if (extensions) {
+            log.debug(extensions);
+            if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
+                log.debug('PSK requested');
+                if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null
+                    log.warn('PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
+                } else {
+                    const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();
+                    processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
+                    credentialId = backupKeyCredentialId;
+                    credentialSource.id = credentialId;
+                    await CredentialsMap.put(rpId, credentialSource);
+                    log.debug('Processed PSK');
+                }
+
+            }
+        }
+        if (processedExtensions) {
+            processedExtensions =  new Uint8Array(CBOR.encodeCanonical(processedExtensions));
+        }
+
+
+        // Step 10
+        const sigCnt = this.getSignatureCounter();
+
+        // Step 11
+        const rawCredentialId = base64ToByteArray(credentialId, true);
+        const attestedCredentialData = await this.generateAttestedCredentialData(rawCredentialId, keyPair);
+
+        // Step 12
+        const authenticatorData = await this.generateAuthenticatorData(rpId, sigCnt, attestedCredentialData, processedExtensions);
+
+        // Step 13
+        const attObj = await this.generateAttestationObject(hash, authenticatorData);
+
+        // Return value is not 1:1 WebAuthn conform
+        log.debug('Created credential', credentialId)
+        return (new AttestationObjectWrapper(credentialId, attObj));
     }
 
     private static async generateAttestedCredentialData(credentialId: Uint8Array, publicKey: ICOSECompatibleKey): Promise<Uint8Array> {

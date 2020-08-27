@@ -88,7 +88,7 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     const rpID = options.publicKey.rpId || getDomainFromOrigin(origin);
 
     // Step 8 + 9
-    // ToDo Authenticator Extension
+    // ToDo Authenticator Extension, Create custom HASH for psk
 
     // Step 10 + 11
     const clientDataJSON = generateClientDataJSON(Get, options.publicKey.challenge as ArrayBuffer, origin);

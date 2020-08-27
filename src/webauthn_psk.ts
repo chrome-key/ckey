@@ -1,11 +1,13 @@
 import * as axios from 'axios';
 import * as CBOR from 'cbor';
 
-import {PSKStorage} from "./webauth_storage";
+import {PSKStorage, PublicKeyCredentialSource} from "./webauth_storage";
 import {getLogger} from "./logging";
 import {base64ToByteArray, byteArrayToBase64} from "./utils";
 import {ECDSA, ICOSECompatibleKey} from "./webauthn_crypto";
 import {getAttestationCertificate} from "./webauthn_attestation";
+import {Authenticator} from "./webauthn_authenticator";
+import {PSK_EXTENSION_IDENTIFIER} from "./constants";
 
 const log = getLogger('webauthn_psk');
 
@@ -42,6 +44,18 @@ export class RecoveryKey {
         this.pubKey = pubKey;
         this.privKey = privKey;
         this.delegationSignature = sign;
+    }
+
+    static async popRecoveryKey(): Promise<RecoveryKey> {
+        const recoveryKeys = await PSKStorage.loadRecoveryKeys();
+        if (recoveryKeys.length == 0) {
+            throw new Error('No recovery keys available');
+        }
+        const recoveryKey = recoveryKeys.pop();
+        log.debug('Pop recovery key', recoveryKey);
+        await PSKStorage.storeRecoveryKeys(recoveryKeys);
+
+        return recoveryKey;
     }
 }
 
@@ -144,7 +158,24 @@ export class PSK {
         return [backupKey.credentialId, CBOR.encodeCanonical({bckpDvcAttObj: base64ToByteArray(backupKey.bdAttObj, true)})];
     }
 
-    public static async authenticatorGetCredentialExtensionOutput(): Promise<Uint8Array> {
-        return Promise.resolve(undefined); // ToDo Implement
+    public static async authenticatorGetCredentialExtensionOutput(oldCredentialId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, Uint8Array]> {
+        // Find recovery key for given credential id
+        const recoveryKeys = (await PSKStorage.loadRecoveryKeys()).filter(x => x.credentialId === oldCredentialId);
+        if (recoveryKeys.length !== 1) {
+            throw new Error(`Expected 1 matching recovery key, but got ${recoveryKeys.length}`);
+        }
+        const recKey = recoveryKeys[0];
+
+        // Create attestation object using the key pair of the recovery key + request PSK extension
+        const keyPair = await ECDSA.fromKey(recKey.privKey);
+        keyPair.publicKey = recKey.pubKey;
+        const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
+        const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
+        const attObjWrapper = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
+        //const encAttObj = byteArrayToBase64(attObjWrapper.rawAttObj, true);
+
+        const recoveryMessage = {attestationObject: attObjWrapper.rawAttObj, oldCredentialId, delegationSignature: recKey.delegationSignature}
+        const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
+        return [attObjWrapper.credentialId, cborRecMsg]
     }
 }

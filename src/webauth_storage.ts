@@ -144,7 +144,12 @@ export class PSKStorage {
         });
     }
 
-    public static async loadRecoveryKeys(rpId): Promise<RecoveryKey[]> {
+    public static async recoveryKeyExists(credId: string): Promise<boolean> {
+        const backupKeys = await PSKStorage.loadBackupKeys();
+        return backupKeys.filter(x => x.credentialId === credId).length > 0
+    }
+
+    public static async loadRecoveryKeys(): Promise<RecoveryKey[]> {
         log.debug(`Loading recovery keys`);
         return new Promise<RecoveryKey[]>(async (res, rej) => {
             chrome.storage.local.get({[RECOVERY_KEY]: null}, async (resp) => {
