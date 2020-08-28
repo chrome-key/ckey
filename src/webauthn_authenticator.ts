@@ -120,12 +120,10 @@ export class Authenticator {
                     throw new Error('Get: New credential source missing');
                 }
                 log.debug('Get: Processed PSK');
-            } else {
-
+            } else if (isRecovery[0]) {
+                throw new Error('Recovery detected, but no PSK requested.')
             }
-        }
-
-        if (!extensions.has(PSK_EXTENSION_IDENTIFIER) && isRecovery[0]) {
+        } else if (isRecovery[0]) {
             throw new Error('Recovery detected, but no PSK requested.')
         }
 
