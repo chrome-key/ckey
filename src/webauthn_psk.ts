@@ -46,16 +46,18 @@ export class RecoveryKey {
         this.delegationSignature = sign;
     }
 
-    static async popRecoveryKey(): Promise<RecoveryKey> {
-        const recoveryKeys = await PSKStorage.loadRecoveryKeys();
+    static async findRecoveryKey(credId: string): Promise<RecoveryKey|null> {
+        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.credentialId === credId);
         if (recoveryKeys.length == 0) {
-            throw new Error('No recovery keys available');
+            return null
         }
-        const recoveryKey = recoveryKeys.pop();
-        log.debug('Pop recovery key', recoveryKey);
-        await PSKStorage.storeRecoveryKeys(recoveryKeys);
 
-        return recoveryKey;
+        return recoveryKeys[0];
+    }
+
+    static async removeRecoveryKey(credId: string): Promise<void> {
+        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.credentialId !== credId);
+        return await PSKStorage.storeRecoveryKeys(recoveryKeys);
     }
 }
 
@@ -90,7 +92,8 @@ export class PSK {
 
     public static async recoverySetup(): Promise<void> {
 
-        const authAlias = prompt('Which authenticator you want to recover?', 'MyAuth');
+        const authAlias = prompt('Which authenticator you want to recover?', 'OldAuth');
+        const newAuthAlias = prompt('What is alias of your current authenticator?', 'MyAuth');
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
         return await axios.default.get(bdEndpoint  + '/recovery?authAlias=' + authAlias)
@@ -119,7 +122,8 @@ export class PSK {
 
                 await axios.default.post(bdEndpoint + '/recovery?authAlias=' + authAlias, {
                     repKeys: replacementKeys,
-                    attCert
+                    attCert,
+                    newAuthAlias
                 })
                     .then(async function (delResponse) {
                         const rawDelegations = delResponse.data;
@@ -159,12 +163,12 @@ export class PSK {
     }
 
     public static async authenticatorGetCredentialExtensionOutput(oldCredentialId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, Uint8Array]> {
+        log.debug('authenticatorGetCredentialExtensionOutput called');
         // Find recovery key for given credential id
-        const recoveryKeys = (await PSKStorage.loadRecoveryKeys()).filter(x => x.credentialId === oldCredentialId);
-        if (recoveryKeys.length !== 1) {
-            throw new Error(`Expected 1 matching recovery key, but got ${recoveryKeys.length}`);
+        const recKey = await RecoveryKey.findRecoveryKey(oldCredentialId);
+        if (recKey == null) {
+            throw new Error("No recovery key found, but recovery were detected");
         }
-        const recKey = recoveryKeys[0];
 
         // Create attestation object using the key pair of the recovery key + request PSK extension
         const keyPair = await ECDSA.fromKey(recKey.privKey);
@@ -173,6 +177,9 @@ export class PSK {
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         const attObjWrapper = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
         //const encAttObj = byteArrayToBase64(attObjWrapper.rawAttObj, true);
+
+        // Finally remove recovery key since PSK output was generated successfully
+        await RecoveryKey.removeRecoveryKey(oldCredentialId);
 
         const recoveryMessage = {attestationObject: attObjWrapper.rawAttObj, oldCredentialId, delegationSignature: recKey.delegationSignature}
         const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));

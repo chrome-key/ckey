@@ -56,9 +56,9 @@ export class Authenticator {
 
         log.debug('Called authenticatorGetAssertion');
 
-        // Step 2-7
-        let credentialOptions: PublicKeyCredentialSource[] = [];
+        // Step 2-7 + recovery lookup
         let isRecovery: [boolean, string] = [false, ""];
+        let credentialOptions: PublicKeyCredentialSource[] = [];
         if (allowCredentialDescriptorList) {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
@@ -73,6 +73,7 @@ export class Authenticator {
         }
         if (credentialOptions.length == 0) {
             // Check if there is any recovery key that matches the provided credential descriptors
+            log.debug('No directly managed credentials found');
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
@@ -83,13 +84,13 @@ export class Authenticator {
                     break;
                 }
             }
-            if (!isRecovery) {
+            if (!isRecovery[0]) {
                 throw new Error(`Container does not manage any related credentials`);
             }
         }
         // Note: The authenticator won't let the user select a public key credential source
         let credSource;
-        if (!isRecovery[0]) {
+        if (!isRecovery[0]) { // No recovery
             credSource = credentialOptions[0];
         }
 
@@ -104,20 +105,30 @@ export class Authenticator {
         if (extensions) {
             log.debug(extensions);
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
-                log.debug('PSK requested');
+                log.debug('Get: PSK requested');
+                if (!isRecovery[0]) {
+                    throw new Error('PSK extension requested, but no matching recovery key available');
+                }
                 const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
                 const pskInput = await CBOR.decode(new Buffer(rawPskInput));
-                log.debug('PSK input', pskInput);
-                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(null, pskInput.hash, rpId);
+                log.debug('Get: PSK input', pskInput);
+                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery[1], pskInput.hash, rpId);
                 processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutput]]);
                 credSource = await CredentialsMap.lookup(rpId, newCredId);
                 if (credSource == null) {
-                    throw new Error('New credential source missing');
+                    // This should never happen
+                    throw new Error('Get: New credential source missing');
                 }
-                log.debug('Processed PSK');
+                log.debug('Get: Processed PSK');
+            } else {
 
             }
         }
+
+        if (!extensions.has(PSK_EXTENSION_IDENTIFIER) && isRecovery[0]) {
+            throw new Error('Recovery detected, but no PSK requested.')
+        }
+
         if (processedExtensions) {
             processedExtensions =  new Uint8Array(CBOR.encodeCanonical(processedExtensions));
         }
@@ -253,16 +264,16 @@ export class Authenticator {
         if (extensions) {
             log.debug(extensions);
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
-                log.debug('PSK requested');
+                log.debug('Make: PSK requested');
                 if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null
-                    log.warn('PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
+                    log.warn('Make: PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
                 } else {
                     const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();
                     processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
                     credentialId = backupKeyCredentialId;
                     credentialSource.id = credentialId;
                     await CredentialsMap.put(rpId, credentialSource);
-                    log.debug('Processed PSK');
+                    log.debug('Make: Processed PSK');
                 }
 
             }

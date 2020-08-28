@@ -145,7 +145,7 @@ export class PSKStorage {
     }
 
     public static async recoveryKeyExists(credId: string): Promise<boolean> {
-        const backupKeys = await PSKStorage.loadBackupKeys();
+        const backupKeys = await PSKStorage.loadRecoveryKeys();
         return backupKeys.filter(x => x.credentialId === credId).length > 0
     }
 
@@ -178,13 +178,13 @@ export class PSKStorage {
                             namedCurve: ES256,
                         },
                         true,
-                        ['sign'],
+                        [],
                     );
 
-                    const recKey =  new RecoveryKey(json.credId, pubKey, prvKey, json.sign);
+                    const recKey =  new RecoveryKey(json.credentialId, pubKey, prvKey, json.delegationSignature);
                     recKeys.push(recKey);
                 }
-                log.debug('Loaded recovery keys successfully');
+                log.debug('Loaded recovery keys successfully', recKeys);
                 res(recKeys);
             });
         });

@@ -88,7 +88,23 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     const rpID = options.publicKey.rpId || getDomainFromOrigin(origin);
 
     // Step 8 + 9
-    // ToDo Authenticator Extension, Create custom HASH for psk
+    let clientExtensions = undefined;
+    let authenticatorExtensions = undefined;
+    if (options.publicKey.extensions) {
+        const reqExt: any = options.publicKey.extensions;
+        if (reqExt.hasOwnProperty(PSK_EXTENSION_IDENTIFIER)) {
+            log.debug('PSK extension requested');
+            if (reqExt[PSK_EXTENSION_IDENTIFIER] == true) {
+                log.debug('PSK extension has valid client input');
+                const customClientDataJSON = generateClientDataJSON(Create, options.publicKey.challenge as ArrayBuffer, origin);
+                const customClientDataHashDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(customClientDataJSON)));
+                const customClientDataHash = new Uint8Array(customClientDataHashDigest);
+                const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({hash: customClientDataHash}));
+                authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
+                clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true}; // ToDo Add to response
+            }
+        }
+    }
 
     // Step 10 + 11
     const clientDataJSON = generateClientDataJSON(Get, options.publicKey.challenge as ArrayBuffer, origin);
@@ -105,7 +121,8 @@ export async function getPublicKeyCredential(origin: string, options: Credential
         clientDataHash,
         userPresence,
         userVerification,
-        options.publicKey.allowCredentials);
+        options.publicKey.allowCredentials,
+        authenticatorExtensions);
 
     log.debug('Received assertion response');
 
