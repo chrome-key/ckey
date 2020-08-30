@@ -197,53 +197,6 @@ export class Authenticator {
         }
 
         return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, undefined, extensions);
-
-        /*let credentialId = this.createCredentialId();
-
-        let credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpEntity.id); // No user Handle
-        await CredentialsMap.put(rpEntity.id, credentialSource);
-
-        // Step 9
-        let processedExtensions = undefined;
-        if (extensions) {
-            log.debug(extensions);
-            if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
-                log.debug('PSK requested');
-                if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null
-                    log.warn('PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
-                } else {
-                    const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();
-                    processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
-                    credentialId = backupKeyCredentialId;
-                    credentialSource.id = credentialId;
-                    await CredentialsMap.put(rpEntity.id, credentialSource);
-                    log.debug('Processed PSK');
-                }
-
-            }
-        }
-        if (processedExtensions) {
-            processedExtensions =  new Uint8Array(CBOR.encodeCanonical(processedExtensions));
-        }
-
-
-        // Step 10
-        const sigCnt = this.getSignatureCounter();
-
-        // Step 11
-        const rawCredentialId = base64ToByteArray(credentialId, true);
-        const attestedCredentialData = await this.generateAttestedCredentialData(rawCredentialId, keyPair);
-
-        // Step 12
-        const authenticatorData = await this.generateAuthenticatorData(rpEntity.id, sigCnt, attestedCredentialData, processedExtensions);
-
-        // Step 13
-        const attObj = await this.generateAttestationObject(hash, authenticatorData);
-
-        // Return value is not 1:1 WebAuthn conform
-        log.debug('Created credential', credentialId)
-        return (new AttestationObjectWrapper(credentialId, attObj));*/
-
     }
 
     public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>): Promise<AttestationObjectWrapper> {

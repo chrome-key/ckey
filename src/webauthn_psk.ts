@@ -167,7 +167,7 @@ export class PSK {
         // Find recovery key for given credential id
         const recKey = await RecoveryKey.findRecoveryKey(oldCredentialId);
         if (recKey == null) {
-            throw new Error("No recovery key found, but recovery were detected");
+            throw new Error("No recovery key found, but recovery was detected");
         }
 
         // Create attestation object using the key pair of the recovery key + request PSK extension
@@ -176,12 +176,11 @@ export class PSK {
         const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         const attObjWrapper = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
-        //const encAttObj = byteArrayToBase64(attObjWrapper.rawAttObj, true);
 
         // Finally remove recovery key since PSK output was generated successfully
         await RecoveryKey.removeRecoveryKey(oldCredentialId);
 
-        const recoveryMessage = {attestationObject: attObjWrapper.rawAttObj, oldCredentialId, delegationSignature: recKey.delegationSignature}
+        const recoveryMessage = {attestationObject: attObjWrapper.rawAttObj, oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature}
         const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
         return [attObjWrapper.credentialId, cborRecMsg]
     }

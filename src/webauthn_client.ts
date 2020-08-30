@@ -101,7 +101,7 @@ export async function getPublicKeyCredential(origin: string, options: Credential
                 const customClientDataHash = new Uint8Array(customClientDataHashDigest);
                 const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({hash: customClientDataHash}));
                 authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-                clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true}; // ToDo Add to response
+                clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: {clientDataJSON: customClientDataJSON}}; // ToDo Add to response
             }
         }
     }
