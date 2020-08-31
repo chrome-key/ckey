@@ -24,13 +24,13 @@ export class PSKStorage {
                     return;
                 }
 
-                if (resp[BACKUP_KEY] == null) {
+                if (resp[BD_ENDPOINT] == null) {
                     log.warn(`No endpoint found, use default endpoint`);
                     res(DEFAULT_BD_ENDPOINT);
                     return;
                 }
                 log.debug('Loaded BD endpoint successfully');
-                res(resp[BACKUP_KEY]);
+                res(resp[BD_ENDPOINT]);
             });
         });
     }
