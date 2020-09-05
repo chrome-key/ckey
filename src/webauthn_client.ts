@@ -113,10 +113,17 @@ export async function createPublicKeyCredential(origin: string, options: Credent
 }
 
 export async function getPublicKeyCredential(origin: string, options: CredentialRequestOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>) {
+    // Step 1
+    if (!options.publicKey) {
+        throw new Error('options missing');
+    }
+
     // Step 2
     if (!sameOriginWithAncestors) {
         throw new Error(`sameOriginWithAncestors has to be true`);
     }
+
+    // No timeout
 
     // Step 7
     const rpID = options.publicKey.rpId || getDomainFromOrigin(origin);
@@ -136,6 +143,8 @@ export async function getPublicKeyCredential(origin: string, options: Credential
                 const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({hash: customClientDataHash}));
                 authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
                 // clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: {clientDataJSON: customClientDataJSON}}; // ToDo  Add to response
+            } else {
+                log.warn('PSK client extension processing failed. Wrong input.');
             }
         }
     }
@@ -147,21 +156,29 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     const clientDataHashDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(clientDataJSON)));
     const clientDataHash = new Uint8Array(clientDataHashDigest);
 
-    // Step 18: Simplified, just for 1 authenticator
+    // Handle only 1 authenticator
+    // Step 18
+    if (options.publicKey.userVerification && (options.publicKey.userVerification === 'required')) {
+        throw new Error(`cKey does not support user verification`);
+    }
+
     const userVerification = options.publicKey.userVerification === "required";
     const userPresence = !userVerification;
+
+    const allowCredentialDescriptorList = options.publicKey.allowCredentials; // No filtering
+
     const assertionCreationData = await Authenticator.authenticatorGetAssertion(userConsentCallback,
         rpID,
         clientDataHash,
         userPresence,
         userVerification,
-        options.publicKey.allowCredentials,
+        allowCredentialDescriptorList,
         authenticatorExtensions);
 
     log.debug('Received assertion response');
 
     return {
-        getClientExtensionResults: () => ({}),
+        getClientExtensionResults: () => (clientExtensions), // ToDo Add client extension output
         id: assertionCreationData.credentialId,
         rawId: base64ToByteArray(assertionCreationData.credentialId, true),
         response: {

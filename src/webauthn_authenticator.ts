@@ -50,6 +50,7 @@ export class Authenticator {
         let isRecovery: [boolean, string] = [false, ""];
         let credentialOptions: PublicKeyCredentialSource[] = [];
         if (allowCredentialDescriptorList) {
+            // Simplified credential lookup
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
@@ -59,6 +60,7 @@ export class Authenticator {
                 }
             }
         } else {
+            // If no credentials were supplied, load all credentials associated to the RPID
             credentialOptions = credentialOptions.concat(await CredentialsMap.load(rpId));
         }
         if (credentialOptions.length == 0) {
@@ -75,6 +77,7 @@ export class Authenticator {
                 }
             }
             if (!isRecovery[0]) {
+                // No recovery and no associated credential found
                 throw new Error(`Container does not manage any related credentials`);
             }
         }
@@ -84,7 +87,6 @@ export class Authenticator {
             credSource = credentialOptions[0];
         }
 
-
         const userConsent = await userConsentCallback;
         if (!userConsent) {
             throw new Error(`no user consent`);
@@ -93,7 +95,6 @@ export class Authenticator {
         // Step 8
         let processedExtensions = undefined;
         if (extensions) {
-            log.debug(extensions);
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
                 log.debug('Get: PSK requested');
                 if (!isRecovery[0]) {
@@ -101,7 +102,6 @@ export class Authenticator {
                 }
                 const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
                 const pskInput = await CBOR.decode(new Buffer(rawPskInput));
-                log.debug('Get: PSK input', pskInput);
                 const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery[1], pskInput.hash, rpId);
                 processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutput]]);
                 credSource = await CredentialsMap.lookup(rpId, newCredId);
