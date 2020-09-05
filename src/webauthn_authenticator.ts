@@ -9,16 +9,6 @@ import {PSK} from "./webauthn_psk";
 
 const log = getLogger('webauthn_authenticator');
 
-export class AttestationObjectWrapper {
-    public credentialId: string
-    public rawAttObj: Uint8Array
-
-    constructor(credId: string, raw: Uint8Array) {
-        this.credentialId = credId;
-        this.rawAttObj = raw;
-    }
-}
-
 export class AssertionResponse {
     public authenticatorData: Uint8Array
     public signature: Uint8Array
@@ -157,7 +147,7 @@ export class Authenticator {
                                              requireUserVerification: boolean,
                                              credTypesAndPubKeyAlgs:  PublicKeyCredentialParameters[],
                                              excludeCredentialDescriptorList?: PublicKeyCredentialDescriptor[],
-                                             extensions?: Map<string, string>): Promise<AttestationObjectWrapper> {
+                                             extensions?: Map<string, string>): Promise<[string, Uint8Array]> {
         log.debug('Called authenticatorMakeCredential');
 
         // Step 2
@@ -173,17 +163,20 @@ export class Authenticator {
         }
 
         // Step 3
-        if (excludeCredentialDescriptorList) {
+        if (excludeCredentialDescriptorList) { // Simplified look up
             const credMapEntries = await CredentialsMap.load(rpEntity.id);
             for (let i = 0; i < excludeCredentialDescriptorList.length; i++) {
                 const rawCredId = excludeCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
                 if (credMapEntries.findIndex(x =>
                     (x.id == credId) && (x.type === excludeCredentialDescriptorList[i].type)) >= 0) {
+                    await userConsentCallback;
                     throw new Error(`authenticator manages credential of excludeCredentialDescriptorList`);
                 }
             }
         }
+
+        // Step 4 Not needed, because cKey supports resident keys
 
         // Step 5
         if (requireUserVerification) {
@@ -195,19 +188,19 @@ export class Authenticator {
         if (!userConsent) {
             throw new Error(`no user consent`);
         }
+        userEntity.id
 
-        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, undefined, extensions);
+        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, undefined, extensions, userEntity.id);
     }
 
-    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>): Promise<AttestationObjectWrapper> {
+    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>, userHandle?: BufferSource): Promise<[string, Uint8Array]> {
         // Step 7
         if (!(keyPair)) {
             log.debug('No key pair provided, create new one.');
             keyPair = await ECDSA.createECDSAKeyPair();
         }
         let credentialId = this.createCredentialId();
-        let credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpId); // No
-        // user Handle
+        let credentialSource = new PublicKeyCredentialSource(credentialId, keyPair.privateKey, rpId, (<Uint8Array>userHandle));
         await CredentialsMap.put(rpId, credentialSource);
 
         // Step 9
@@ -216,7 +209,7 @@ export class Authenticator {
             log.debug(extensions);
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
                 log.debug('Make: PSK requested');
-                if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null
+                if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null in CBOR
                     log.warn('Make: PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
                 } else {
                     const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();
@@ -249,7 +242,7 @@ export class Authenticator {
 
         // Return value is not 1:1 WebAuthn conform
         log.debug('Created credential', credentialId)
-        return (new AttestationObjectWrapper(credentialId, attObj));
+        return [credentialId, attObj];
     }
 
     private static async generateAttestedCredentialData(credentialId: Uint8Array, publicKey: ICOSECompatibleKey): Promise<Uint8Array> {

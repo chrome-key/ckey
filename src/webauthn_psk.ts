@@ -1,10 +1,10 @@
 import * as axios from 'axios';
 import * as CBOR from 'cbor';
 
-import {PSKStorage, PublicKeyCredentialSource} from "./webauth_storage";
+import {PSKStorage} from "./webauth_storage";
 import {getLogger} from "./logging";
 import {base64ToByteArray, byteArrayToBase64} from "./utils";
-import {ECDSA, ICOSECompatibleKey} from "./webauthn_crypto";
+import {ECDSA} from "./webauthn_crypto";
 import {getAttestationCertificate} from "./webauthn_attestation";
 import {Authenticator} from "./webauthn_authenticator";
 import {PSK_EXTENSION_IDENTIFIER} from "./constants";
@@ -175,13 +175,13 @@ export class PSK {
         keyPair.publicKey = recKey.pubKey;
         const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-        const attObjWrapper = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
+        const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
 
         // Finally remove recovery key since PSK output was generated successfully
         await RecoveryKey.removeRecoveryKey(oldCredentialId);
 
-        const recoveryMessage = {attestationObject: attObjWrapper.rawAttObj, oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature}
+        const recoveryMessage = {attestationObject: rawAttObj, oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature}
         const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
-        return [attObjWrapper.credentialId, cborRecMsg]
+        return [credentialId, cborRecMsg]
     }
 }

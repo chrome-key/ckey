@@ -13,26 +13,39 @@ const log = getLogger('webauthn_client');
 export async function createPublicKeyCredential(origin: string, options: CredentialCreationOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>): Promise<PublicKeyCredential> {
     log.debug('Called createPublicKeyCredential');
 
+    // Step 1
+    if (!options.publicKey) {
+        throw new Error('options missing');
+    }
+
     // Step 2
     if (!sameOriginWithAncestors) {
         throw new Error(`sameOriginWithAncestors has to be true`);
     }
 
+    // Skip timeout
+
     // Step 7
     options.publicKey.rp.id = options.publicKey.rp.id || getDomainFromOrigin(origin);
 
-    // Step 11
+    // Step 8-10
+    const credTypesAndPubKeyAlgs = options.publicKey.pubKeyCredParams;
+
+    // Step 11 + 12
+    // Only PSK extension is processed
     let clientExtensions = undefined;
     let authenticatorExtensions = undefined;
     if (options.publicKey.extensions) {
         const reqExt: any = options.publicKey.extensions;
         if (reqExt.hasOwnProperty(PSK_EXTENSION_IDENTIFIER)) {
-            log.debug('PSK extension requested');
+            log.info('PSK extension requested');
             if (reqExt[PSK_EXTENSION_IDENTIFIER] == true) {
                 log.debug('PSK extension has valid client input');
                 const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
                 authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
                 clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true};
+            } else {
+                log.warn('PSK client extension processing failed. Wrong input.');
             }
         }
     }
@@ -44,7 +57,22 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     const clientDataHashDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(clientDataJSON)));
     const clientDataHash = new Uint8Array(clientDataHashDigest);
 
-    // Step 20: Simplified, just for 1 authenticator
+    // Handle only 1 authenticator
+    // Step 20, simplified
+    if (options.publicKey.authenticatorSelection) {
+        if (options.publicKey.authenticatorSelection.authenticatorAttachment && (options.publicKey.authenticatorSelection.authenticatorAttachment !== 'platform')) {
+            throw new Error(`${options.publicKey.authenticatorSelection.authenticatorAttachment} authenticator requested, but only platform authenticators available`);
+        }
+
+
+        // Resident key check can be omitted, because cKey supports resident keys
+
+        if (options.publicKey.authenticatorSelection.userVerification && (options.publicKey.authenticatorSelection.userVerification === 'required')) {
+            throw new Error(`cKey does not support user verification`);
+        }
+    }
+
+
     let userVerification = false;
     let residentKey = false;
     if (options.publicKey.authenticatorSelection) {
@@ -53,25 +81,31 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     }
     const userPresence = !userVerification;
 
-    const attObjWrapper = await Authenticator.authenticatorMakeCredential(userConsentCallback,
+    const excludeCredentialDescriptorList = options.publicKey.excludeCredentials // No filtering
+
+    const [credentialId, rawAttObj] = await Authenticator.authenticatorMakeCredential(userConsentCallback,
         clientDataHash,
         options.publicKey.rp,
         options.publicKey.user,
         residentKey,
         userPresence,
         userVerification,
-        options.publicKey.pubKeyCredParams,
-        options.publicKey.excludeCredentials,
+        credTypesAndPubKeyAlgs,
+        excludeCredentialDescriptorList,
         authenticatorExtensions);
 
     log.debug('Received attestation object');
 
+    if (options.publicKey.attestation === 'none') { // Currently only direct and indirect attestation is supported
+        throw new Error('Client does not support none attestation');
+    }
+
     return {
-        getClientExtensionResults: () => (clientExtensions),
-        id: attObjWrapper.credentialId,
-        rawId: base64ToByteArray(attObjWrapper.credentialId, true),
+        getClientExtensionResults: () => (clientExtensions), // ToDo Fix client extension output
+        id: credentialId,
+        rawId: base64ToByteArray(credentialId, true),
         response: {
-            attestationObject: attObjWrapper.rawAttObj.buffer,
+            attestationObject: rawAttObj.buffer,
             clientDataJSON: base64ToByteArray(window.btoa(JSON.stringify(clientDataJSON))),
         },
         type: 'public-key',
@@ -101,7 +135,7 @@ export async function getPublicKeyCredential(origin: string, options: Credential
                 const customClientDataHash = new Uint8Array(customClientDataHashDigest);
                 const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({hash: customClientDataHash}));
                 authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-                clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: {clientDataJSON: customClientDataJSON}}; // ToDo Add to response
+                // clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: {clientDataJSON: customClientDataJSON}}; // ToDo  Add to response
             }
         }
     }
