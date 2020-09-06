@@ -10,6 +10,7 @@ $(() => {
     });
 
     $.when(PSK.bdDeviceUrl()).then((url) => $('#BackupDeviceUrl').val(url));
+    $.when(PSK.alias()).then((alias) => $('#AuthenticatorAlias').val(alias));
 
     $('#Recovery').on('click', function(evt: Event) {
         evt.preventDefault();
@@ -18,11 +19,12 @@ $(() => {
         });
     });
 
-    $('#SaveBackupDeviceUrl').on('click', function(evt: Event) {
+    $('#SaveOptions').on('click', function(evt: Event) {
         evt.preventDefault();
         chrome.runtime.sendMessage({
             type: 'psk_options',
             url: $('#BackupDeviceUrl').val(),
+            alias: $('#AuthenticatorAlias').val(),
         });
     });
 });

@@ -1,7 +1,8 @@
 import {base64ToByteArray, byteArrayToBase64, concatenate} from "./utils";
 import {
+    AUTH_ALIAS,
     BACKUP_KEY,
-    BD_ENDPOINT,
+    BD_ENDPOINT, DEFAULT_AUTH_ALIAS,
     DEFAULT_BD_ENDPOINT, ES256,
     ivLength,
     keyExportFormat,
@@ -41,6 +42,41 @@ export class PSKStorage {
             chrome.storage.local.set({[BD_ENDPOINT]: endpoint}, () => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.setBDEndpoint', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                } else {
+                    res();
+                }
+            });
+        });
+    }
+
+    public static async getAlias(): Promise<string> {
+        return new Promise<string>(async (res, rej) => {
+            chrome.storage.local.get({[AUTH_ALIAS]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.getAlias', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                }
+
+                if (resp[AUTH_ALIAS] == null) {
+                    log.warn(`No auth alias found, use default alias`);
+                    res(DEFAULT_AUTH_ALIAS);
+                    return;
+                }
+                log.debug('Loaded alias successfully');
+                res(resp[AUTH_ALIAS]);
+            });
+        });
+    }
+
+    public static async setAlias(alias: string): Promise<void> {
+        log.debug('Set alias to', alias);
+        return new Promise<void>(async (res, rej) => {
+            chrome.storage.local.set({[AUTH_ALIAS]: alias}, () => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.setAlias', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
                     return;
                 } else {

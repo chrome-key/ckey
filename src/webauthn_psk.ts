@@ -66,13 +66,17 @@ export class PSK {
         return await PSKStorage.getBDEndpoint();
     }
 
-    public static async setOptions(url: string): Promise<void> {
-        return await PSKStorage.setBDEndpoint(url);
+    public static async setOptions(alias: string, url: string): Promise<[void, void]> {
+        return await Promise.all([PSKStorage.setAlias(alias), PSKStorage.setBDEndpoint(url)]);
+    }
+
+    public static async alias(): Promise<string> {
+        return await PSKStorage.getAlias();
     }
 
     public static async setup(): Promise<void> {
         const bdEndpoint = await PSKStorage.getBDEndpoint();
-        const authAlias = prompt('Please enter an alias name for your authenticator', 'MyAuth');
+        const authAlias = await this.alias();
         const keyAmount: number = +prompt('How many backup keys should be created?', '5');
 
         return await axios.default.post(bdEndpoint  + '/setup', {authAlias, keyAmount})
@@ -91,9 +95,8 @@ export class PSK {
     }
 
     public static async recoverySetup(): Promise<void> {
-
         const authAlias = prompt('Which authenticator you want to recover?', 'OldAuth');
-        const newAuthAlias = prompt('What is alias of your current authenticator?', 'MyAuth');
+        const newAuthAlias = await this.alias();
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
         return await axios.default.get(bdEndpoint  + '/recovery?authAlias=' + authAlias)

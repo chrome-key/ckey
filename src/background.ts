@@ -101,9 +101,9 @@ const pskRecovery = async () => {
     }
 }
 
-const pskOptions = async (url) => {
+const pskOptions = async (alias, url) => {
     try {
-        await PSK.setOptions(url);
+        await PSK.setOptions(alias, url);
     } catch (e) {
         log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e);
     }
@@ -124,7 +124,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             pskRecovery().then(() => alert('PSK recovery setup was successfully!'), null);
             break;
         case 'psk_options':
-            pskOptions(msg.url).then(() => alert('PSK options was successfully!'), null);
+            pskOptions(msg.alias, msg.url).then(() => alert('PSK options was successfully!'), null);
             break;
         case 'user_consent':
             const cb = userConsentCallbacks[msg.tabId];
