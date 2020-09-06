@@ -252,6 +252,7 @@ export class Authenticator {
         credIdLen[1] = credentialId.length & 0xff;
         const coseKey = await publicKey.toCOSE(publicKey.publicKey);
         const encodedKey = new Uint8Array(CBOR.encodeCanonical(coseKey));
+        log.debug('New pub key', byteArrayToBase64(encodedKey, true));
 
         const attestedCredentialDataLength = aaguid.length + credIdLen.length + credentialId.length + encodedKey.length;
         const attestedCredentialData = new Uint8Array(attestedCredentialDataLength);

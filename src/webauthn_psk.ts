@@ -180,10 +180,13 @@ export class PSK {
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
 
+        log.debug('Delegation signature', recKey.delegationSignature);
+        log.debug('Attestation object', byteArrayToBase64(rawAttObj, true));
+
         // Finally remove recovery key since PSK output was generated successfully
         await RecoveryKey.removeRecoveryKey(oldCredentialId);
 
-        const recoveryMessage = {attestationObject: rawAttObj, oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature}
+        const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature}
         const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
         return [credentialId, cborRecMsg]
     }
