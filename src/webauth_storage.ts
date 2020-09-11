@@ -51,41 +51,6 @@ export class PSKStorage {
         });
     }
 
-    public static async getAlias(): Promise<string> {
-        return new Promise<string>(async (res, rej) => {
-            chrome.storage.local.get({[AUTH_ALIAS]: null}, async (resp) => {
-                if (!!chrome.runtime.lastError) {
-                    log.error('Could not perform PSKStorage.getAlias', chrome.runtime.lastError.message);
-                    rej(chrome.runtime.lastError);
-                    return;
-                }
-
-                if (resp[AUTH_ALIAS] == null) {
-                    log.warn(`No auth alias found, use default alias`);
-                    res(DEFAULT_AUTH_ALIAS);
-                    return;
-                }
-                log.debug('Loaded alias successfully');
-                res(resp[AUTH_ALIAS]);
-            });
-        });
-    }
-
-    public static async setAlias(alias: string): Promise<void> {
-        log.debug('Set alias to', alias);
-        return new Promise<void>(async (res, rej) => {
-            chrome.storage.local.set({[AUTH_ALIAS]: alias}, () => {
-                if (!!chrome.runtime.lastError) {
-                    log.error('Could not perform PSKStorage.setAlias', chrome.runtime.lastError.message);
-                    rej(chrome.runtime.lastError);
-                    return;
-                } else {
-                    res();
-                }
-            });
-        });
-    }
-
     public static async storeBackupKeys(backupKeys: BackupKey[], override: boolean = false): Promise<void> {
         log.debug(`Storing backup keys`);
         const backupKeysExists = await this.existBackupKeys();

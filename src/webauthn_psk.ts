@@ -7,7 +7,7 @@ import {base64ToByteArray, byteArrayToBase64} from "./utils";
 import {ECDSA} from "./webauthn_crypto";
 import {getAttestationCertificate} from "./webauthn_attestation";
 import {Authenticator} from "./webauthn_authenticator";
-import {PSK_EXTENSION_IDENTIFIER} from "./constants";
+import {BD_TIMEOUT, PSK_EXTENSION_IDENTIFIER} from "./constants";
 
 const log = getLogger('webauthn_psk');
 
@@ -66,23 +66,20 @@ export class PSK {
         return await PSKStorage.getBDEndpoint();
     }
 
-    public static async setOptions(alias: string, url: string): Promise<[void, void]> {
-        return await Promise.all([PSKStorage.setAlias(alias), PSKStorage.setBDEndpoint(url)]);
+    public static async setOptions(alias: string, url: string): Promise<void> {
+        return await PSKStorage.setBDEndpoint(url);
     }
 
-    public static async alias(): Promise<string> {
-        return await PSKStorage.getAlias();
-    }
+    public static async sync(): Promise<void> {
+        log.debug('Sync triggered');
 
-    public static async setup(): Promise<void> {
         const bdEndpoint = await PSKStorage.getBDEndpoint();
-        const authAlias = await this.alias();
-        const keyAmount: number = +prompt('How many backup keys should be created?', '5');
 
-        return await axios.default.post(bdEndpoint  + '/setup', {authAlias, keyAmount})
+        return await axios.default.get(bdEndpoint  + '/sync', {timeout: BD_TIMEOUT})
             .then(async function(response) {
                 log.debug(response);
-                const setupResponse = response.data;
+                const syncResponse = response.data;
+                const setupResponse = syncResponse.setup;
                 const backupKeys = new Array<BackupKey>();
                 for (let i = 0; i < setupResponse.length; ++i) {
                     const backupKey = new BackupKey(setupResponse[i].credId, setupResponse[i].attObj);
@@ -91,18 +88,23 @@ export class PSK {
                 log.debug('Loaded backup keys', backupKeys);
 
                 await PSKStorage.storeBackupKeys(backupKeys);
+
+                if (syncResponse.recoveryRequired) {
+                    await PSK.recoverySync(syncResponse.authAlias);
+                }
             });
     }
 
-    public static async recoverySetup(): Promise<void> {
-        const authAlias = prompt('Which authenticator you want to recover?', 'OldAuth');
-        const newAuthAlias = await this.alias();
+    private static async recoverySync(newAuthAlias: string): Promise<void> {
+        log.debug("Recovery setup triggered");
+
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
-        return await axios.default.get(bdEndpoint  + '/recovery?authAlias=' + authAlias)
+        return await axios.default.get(bdEndpoint  + '/recovery', {timeout: BD_TIMEOUT})
             .then(async function(initResponse) {
-                log.debug(initResponse);
-                const keyAmount = initResponse.data.keyAmount;
+                const initRecResponse = initResponse.data;
+                const keyAmount = initRecResponse.keyAmount;
+                const replacementAuthAlias = initRecResponse.replacementAuthAlias;
 
                 let rawRecKeys = new Array<[string, CryptoKeyPair]>()
                 let replacementKeys = []
@@ -123,11 +125,12 @@ export class PSK {
 
                 let attCert = byteArrayToBase64(getAttestationCertificate(), true);
 
-                await axios.default.post(bdEndpoint + '/recovery?authAlias=' + authAlias, {
+                await axios.default.post(bdEndpoint + '/recovery', {
                     repKeys: replacementKeys,
                     attCert,
-                    newAuthAlias
-                })
+                    newAuthAlias,
+                    replacementAuthAlias
+                }, {timeout: BD_TIMEOUT})
                     .then(async function (delResponse) {
                         const rawDelegations = delResponse.data;
 
@@ -154,7 +157,7 @@ export class PSK {
                             recoveryKeys.push(recoveryKey);
                         }
 
-                        log.debug('Received recovery keys', recoveryKeys);
+                        log.debug('Recovery finished. Recovery keys:', recoveryKeys);
                         await PSKStorage.storeRecoveryKeys(recoveryKeys);
                     });
             });

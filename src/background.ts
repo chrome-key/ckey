@@ -85,28 +85,12 @@ const getCredential = async (msg, sender: chrome.runtime.MessageSender) => {
     }
 };
 
-const pskSetup = async () => {
-    try {
-        await PSK.setup();
-    } catch (e) {
-        log.error('failed to setup psk', { errorType: `${(typeof e)}` }, e);
-    }
+const pskSync = async () => {
+    await PSK.sync();
 };
 
-const pskRecovery = async () => {
-    try {
-        await PSK.recoverySetup();
-    } catch (e) {
-        log.error('failed to setup psk recovery', { errorType: `${(typeof e)}` }, e);
-    }
-}
-
 const pskOptions = async (alias, url) => {
-    try {
-        await PSK.setOptions(alias, url);
-    } catch (e) {
-        log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e);
-    }
+    await PSK.setOptions(alias, url);
 };
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -117,14 +101,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'get_credential':
             getCredential(msg, sender).then(sendResponse);
             break;
-        case 'psk_setup':
-            pskSetup().then(() => alert('PSK setup was successfully!'), null);
-            break;
-        case 'psk_recovery':
-            pskRecovery().then(() => alert('PSK recovery setup was successfully!'), null);
+        case 'psk_sync':
+            pskSync().then(() => alert('PSK sync was successfully!'), e => log.error('failed to sync psk', { errorType: `${(typeof e)}` }, e));
             break;
         case 'psk_options':
-            pskOptions(msg.alias, msg.url).then(() => alert('PSK options was successfully!'), null);
+            pskOptions(msg.alias, msg.url).then(() => alert('PSK options was successfully!'),   e => log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e));
             break;
         case 'user_consent':
             const cb = userConsentCallbacks[msg.tabId];
