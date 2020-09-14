@@ -79,87 +79,79 @@ export class PSK {
             .then(async function(response) {
                 log.debug(response);
                 const syncResponse = response.data;
-                const setupResponse = syncResponse.setup;
                 const backupKeys = new Array<BackupKey>();
-                for (let i = 0; i < setupResponse.length; ++i) {
-                    const backupKey = new BackupKey(setupResponse[i].credId, setupResponse[i].attObj);
+                for (let i = 0; i < syncResponse.backupPublicKeys.length; ++i) {
+                    const backupKey = new BackupKey(syncResponse.backupPublicKeys[i].credId, syncResponse.backupPublicKeys[i].attObj);
                     backupKeys.push(backupKey);
                 }
-                log.debug('Loaded backup keys', backupKeys);
+                log.debug('Setup finished. Backup keys', backupKeys);
 
                 await PSKStorage.storeBackupKeys(backupKeys);
 
-                if (syncResponse.recoveryRequired) {
-                    await PSK.recoverySync(syncResponse.authAlias);
+                if (syncResponse.hasOwnProperty("recoveryOption")) {
+                    await PSK.recoverySync(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
                 }
             });
     }
 
-    private static async recoverySync(newAuthAlias: string): Promise<void> {
+    private static async recoverySync(delegatedAuthAlias: string, originAuthAlias: string, keyAmount: number): Promise<void> {
         log.debug("Recovery setup triggered");
 
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
-        return await axios.default.get(bdEndpoint  + '/recovery', {timeout: BD_TIMEOUT})
-            .then(async function(initResponse) {
-                const initRecResponse = initResponse.data;
-                const keyAmount = initRecResponse.keyAmount;
-                const replacementAuthAlias = initRecResponse.replacementAuthAlias;
+        let rawRecKeys = new Array<[string, CryptoKeyPair]>()
+        let replacementKeys = []
+        for (let i = 0; i < keyAmount; i++) {
+            const keyPair = await window.crypto.subtle.generateKey(
+                {name: 'ECDSA', namedCurve: 'P-256'},
+                true,
+                ['sign'],
+            );
+            rawRecKeys.push([i.toString(), keyPair]);
 
-                let rawRecKeys = new Array<[string, CryptoKeyPair]>()
-                let replacementKeys = []
-                for (let i = 0; i < keyAmount; i++) {
-                    const keyPair = await window.crypto.subtle.generateKey(
-                        {name: 'ECDSA', namedCurve: 'P-256'},
-                        true,
-                        ['sign'],
-                    );
-                    rawRecKeys.push([i.toString(), keyPair]);
+            // Prepare delegation request
+            const pubKey = await ECDSA.fromKey(keyPair.publicKey);
+            const cosePubKey = await pubKey.toCOSE(pubKey.publicKey);
+            const encodedPubKey = new Uint8Array(CBOR.encodeCanonical(cosePubKey));
+            replacementKeys.push({keyId: i.toString(), pubKey: byteArrayToBase64(encodedPubKey, true)});
+        }
 
-                    // Prepare delegation request
-                    const pubKey = await ECDSA.fromKey(keyPair.publicKey);
-                    const cosePubKey = await pubKey.toCOSE(pubKey.publicKey);
-                    const encodedPubKey = new Uint8Array(CBOR.encodeCanonical(cosePubKey));
-                    replacementKeys.push({keyId: i.toString(), replacementPubKey: byteArrayToBase64(encodedPubKey, true)});
+        let attCert = byteArrayToBase64(getAttestationCertificate(), true);
+
+        return await axios.default.post(bdEndpoint + '/recovery', {
+            replacementKeys,
+            attCert,
+            delegatedAuthAlias,
+            originAuthAlias
+        }, {timeout: BD_TIMEOUT})
+            .then(async function (delResponse) {
+                const rawDelegations = delResponse.data.delegations;
+
+                let recoveryKeys = new Array<RecoveryKey>()
+
+                for (let i = 0; i < rawDelegations.length; ++i) {
+                    const sign = rawDelegations[i].sign;
+                    const credId = rawDelegations[i].credId;
+                    const keyId = rawDelegations[i].keyId;
+
+                    log.debug(rawDelegations[i]);
+
+                    const keyPair = rawRecKeys.filter((x, _) => x[0] == keyId);
+                    if (keyPair.length !== 1) {
+                        log.warn('BD response does not contain delegation for key pair', keyId);
+                        continue;
+                    }
+
+                    const pubKey = keyPair[0][1].publicKey;
+                    const privKey = keyPair[0][1].privateKey;
+
+                    const recoveryKey = new RecoveryKey(credId, pubKey, privKey, sign)
+
+                    recoveryKeys.push(recoveryKey);
                 }
 
-                let attCert = byteArrayToBase64(getAttestationCertificate(), true);
-
-                await axios.default.post(bdEndpoint + '/recovery', {
-                    repKeys: replacementKeys,
-                    attCert,
-                    newAuthAlias,
-                    replacementAuthAlias
-                }, {timeout: BD_TIMEOUT})
-                    .then(async function (delResponse) {
-                        const rawDelegations = delResponse.data;
-
-                        let recoveryKeys = new Array<RecoveryKey>()
-
-                        for (let i = 0; i < rawDelegations.length; ++i) {
-                            const sign = rawDelegations[i].sign;
-                            const credId = rawDelegations[i].credId;
-                            const keyId = rawDelegations[i].keyId;
-
-                            log.debug(rawDelegations[i]);
-
-                            const keyPair = rawRecKeys.filter((x, _) => x[0] == keyId);
-                            if (keyPair.length !== 1) {
-                                log.warn('BD response does not contain delegation for key pair', keyId);
-                                continue;
-                            }
-
-                            const pubKey = keyPair[0][1].publicKey;
-                            const privKey = keyPair[0][1].privateKey;
-
-                            const recoveryKey = new RecoveryKey(credId, pubKey, privKey, sign)
-
-                            recoveryKeys.push(recoveryKey);
-                        }
-
-                        log.debug('Recovery finished. Recovery keys:', recoveryKeys);
-                        await PSKStorage.storeRecoveryKeys(recoveryKeys);
-                    });
+                log.debug('Recovery finished. Recovery keys:', recoveryKeys);
+                await PSKStorage.storeRecoveryKeys(recoveryKeys);
             });
     }
 
