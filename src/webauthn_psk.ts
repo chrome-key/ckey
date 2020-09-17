@@ -157,7 +157,7 @@ export class PSK {
 
     public static async authenticatorMakeCredentialExtensionOutput(): Promise<[string, Uint8Array]> {
         const backupKey = await BackupKey.popBackupKey();
-        return [backupKey.credentialId, CBOR.encodeCanonical({bckpDvcAttObj: base64ToByteArray(backupKey.bdAttObj, true)})];
+        return [backupKey.credentialId, base64ToByteArray(backupKey.bdAttObj, true)];
     }
 
     public static async authenticatorGetCredentialExtensionOutput(oldCredentialId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, Uint8Array]> {
@@ -171,7 +171,7 @@ export class PSK {
         // Create attestation object using the key pair of the recovery key + request PSK extension
         const keyPair = await ECDSA.fromKey(recKey.privKey);
         keyPair.publicKey = recKey.pubKey;
-        const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
+        const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(true));
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
 

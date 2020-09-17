@@ -209,7 +209,9 @@ export class Authenticator {
             log.debug(extensions);
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
                 log.debug('Make: PSK requested');
-                if (extensions.get(PSK_EXTENSION_IDENTIFIER) !== "9g") { // null in CBOR
+                const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
+                const pskInput = await CBOR.decode(new Buffer(rawPskInput));
+                if (pskInput !== true) {
                     log.warn('Make: PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
                 } else {
                     const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();

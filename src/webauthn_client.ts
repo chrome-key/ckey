@@ -39,14 +39,8 @@ export async function createPublicKeyCredential(origin: string, options: Credent
         const reqExt: any = options.publicKey.extensions;
         if (reqExt.hasOwnProperty(PSK_EXTENSION_IDENTIFIER)) {
             log.info('PSK extension requested');
-            if (reqExt[PSK_EXTENSION_IDENTIFIER] == true) {
-                log.debug('PSK extension has valid client input');
-                const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(null));
-                authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-                clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true};
-            } else {
-                log.warn('PSK client extension processing failed. Wrong input.');
-            }
+            const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(true));
+            authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         }
     }
 
