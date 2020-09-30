@@ -38,12 +38,14 @@ export class RecoveryKey {
     public pubKey: CryptoKey
     public privKey: CryptoKey
     public delegationSignature: string
+    public bdAuthData: string
 
-    constructor(credId: string, pubKey: CryptoKey, privKey: CryptoKey, sign: string) {
+    constructor(credId: string, pubKey: CryptoKey, privKey: CryptoKey, sign: string, authdata: string) {
         this.credentialId = credId;
         this.pubKey = pubKey;
         this.privKey = privKey;
         this.delegationSignature = sign;
+        this.bdAuthData = authdata;
     }
 
     static async findRecoveryKey(credId: string): Promise<RecoveryKey|null> {
@@ -133,6 +135,7 @@ export class PSK {
                     const sign = rawDelegations[i].sign;
                     const credId = rawDelegations[i].credId;
                     const keyId = rawDelegations[i].keyId;
+                    const authData = rawDelegations[i].authData;
 
                     log.debug(rawDelegations[i]);
 
@@ -145,7 +148,7 @@ export class PSK {
                     const pubKey = keyPair[0][1].publicKey;
                     const privKey = keyPair[0][1].privateKey;
 
-                    const recoveryKey = new RecoveryKey(credId, pubKey, privKey, sign)
+                    const recoveryKey = new RecoveryKey(credId, pubKey, privKey, sign, authData)
 
                     recoveryKeys.push(recoveryKey);
                 }
@@ -181,7 +184,7 @@ export class PSK {
         // Finally remove recovery key since PSK output was generated successfully
         await RecoveryKey.removeRecoveryKey(oldCredentialId);
 
-        const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature}
+        const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature, bdAuthData: recKey.bdAuthData}
         const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
         return [credentialId, cborRecMsg]
     }

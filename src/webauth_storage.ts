@@ -126,6 +126,7 @@ export class PSKStorage {
                 pubKey: expPubKey,
                 privKey: expPrvKey,
                 delegationSignature: recKey.delegationSignature,
+                bdAuthData: recKey.bdAuthData,
             }
 
             exportKeys.push(json)
@@ -182,7 +183,7 @@ export class PSKStorage {
                         [],
                     );
 
-                    const recKey =  new RecoveryKey(json.credentialId, pubKey, prvKey, json.delegationSignature);
+                    const recKey =  new RecoveryKey(json.credentialId, pubKey, prvKey, json.delegationSignature, json.bdAuthData);
                     recKeys.push(recKey);
                 }
                 log.debug('Loaded recovery keys successfully', recKeys);
