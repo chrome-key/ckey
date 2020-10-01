@@ -12,44 +12,53 @@ import {BD_TIMEOUT, PSK_EXTENSION_IDENTIFIER} from "./constants";
 const log = getLogger('webauthn_psk');
 
 export class BackupKey {
-    public credentialId: string;
     public bdAttObj: string; // base64 URL with padding
 
-    constructor(credId: string, attObj: string) {
-        this.credentialId = credId;
+    constructor(attObj: string) {
         this.bdAttObj = attObj;
     }
 
-    static async popBackupKey(): Promise<BackupKey> {
-        const backupKeys = await PSKStorage.loadBackupKeys();
+    static async popBackupKeys(): Promise<BackupKey[]> {
+        const bds = await PSKStorage.loadBDs();
+        const backupKeys = Array<BackupKey>();
+
+        for (let i = 0; i < bds.length; i++) {
+            const bdBackupKeys = await PSKStorage.loadBackupKeys(bds[i]);
+            if (bdBackupKeys.length == 0) {
+                log.warn('No backup keys for ' + bds[i]);
+                continue;
+            }
+            const backupKey = bdBackupKeys.pop();
+            await PSKStorage.storeBackupKeys(bdBackupKeys, bds[i], true);
+            backupKeys.push(backupKey);
+        }
         if (backupKeys.length == 0) {
             throw new Error('No backup keys available');
         }
-        const backupKey = backupKeys.pop();
-        log.debug('Pop backup key', backupKey);
-        await PSKStorage.storeBackupKeys(backupKeys, true);
 
-        return backupKey;
+        log.debug('Pop backup keys: ', backupKeys)
+
+        return backupKeys;
     }
 }
 
 export class RecoveryKey {
-    public credentialId: string
+    public backupKeyId: string
     public pubKey: CryptoKey
     public privKey: CryptoKey
     public delegationSignature: string
-    public bdAuthData: string
+    public bdData: string
 
-    constructor(credId: string, pubKey: CryptoKey, privKey: CryptoKey, sign: string, authdata: string) {
-        this.credentialId = credId;
+    constructor(backupKeyId: string, pubKey: CryptoKey, privKey: CryptoKey, sign: string, bdData: string) {
+        this.backupKeyId = backupKeyId;
         this.pubKey = pubKey;
         this.privKey = privKey;
         this.delegationSignature = sign;
-        this.bdAuthData = authdata;
+        this.bdData = bdData;
     }
 
-    static async findRecoveryKey(credId: string): Promise<RecoveryKey|null> {
-        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.credentialId === credId);
+    static async findRecoveryKey(backupKeyId: string): Promise<RecoveryKey|null> {
+        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.backupKeyId === backupKeyId);
         if (recoveryKeys.length == 0) {
             return null
         }
@@ -57,8 +66,8 @@ export class RecoveryKey {
         return recoveryKeys[0];
     }
 
-    static async removeRecoveryKey(credId: string): Promise<void> {
-        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.credentialId !== credId);
+    static async removeRecoveryKey(backupKeyId: string): Promise<void> {
+        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.backupKeyId !== backupKeyId);
         return await PSKStorage.storeRecoveryKeys(recoveryKeys);
     }
 }
@@ -83,12 +92,13 @@ export class PSK {
                 const syncResponse = response.data;
                 const backupKeys = new Array<BackupKey>();
                 for (let i = 0; i < syncResponse.backupPublicKeys.length; ++i) {
-                    const backupKey = new BackupKey(syncResponse.backupPublicKeys[i].credId, syncResponse.backupPublicKeys[i].attObj);
+                    const backupKey = new BackupKey(syncResponse.backupPublicKeys[i].attObj);
                     backupKeys.push(backupKey);
                 }
                 log.debug('Setup finished. Backup keys', backupKeys);
 
-                await PSKStorage.storeBackupKeys(backupKeys);
+                await PSKStorage.storeBD(syncResponse.bdUUID);
+                await PSKStorage.storeBackupKeys(backupKeys, syncResponse.bdUUID);
 
                 if (syncResponse.hasOwnProperty("recoveryOption")) {
                     await PSK.recoverySync(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
@@ -115,7 +125,7 @@ export class PSK {
             const pubKey = await ECDSA.fromKey(keyPair.publicKey);
             const cosePubKey = await pubKey.toCOSE(pubKey.publicKey);
             const encodedPubKey = new Uint8Array(CBOR.encodeCanonical(cosePubKey));
-            replacementKeys.push({keyId: i.toString(), pubKey: byteArrayToBase64(encodedPubKey, true)});
+            replacementKeys.push({replacementKeyId: i.toString(), pubKey: byteArrayToBase64(encodedPubKey, true)});
         }
 
         let attCert = byteArrayToBase64(getAttestationCertificate(), true);
@@ -133,22 +143,22 @@ export class PSK {
 
                 for (let i = 0; i < rawDelegations.length; ++i) {
                     const sign = rawDelegations[i].sign;
-                    const credId = rawDelegations[i].credId;
-                    const keyId = rawDelegations[i].keyId;
-                    const authData = rawDelegations[i].authData;
+                    const backupKeyId = rawDelegations[i].backupKeyId;
+                    const replacementKeyId = rawDelegations[i].replacementKeyId;
+                    const bdData = rawDelegations[i].bdData;
 
                     log.debug(rawDelegations[i]);
 
-                    const keyPair = rawRecKeys.filter((x, _) => x[0] == keyId);
+                    const keyPair = rawRecKeys.filter((x, _) => x[0] == replacementKeyId);
                     if (keyPair.length !== 1) {
-                        log.warn('BD response does not contain delegation for key pair', keyId);
+                        log.warn('BD response does not contain delegation for key pair', replacementKeyId);
                         continue;
                     }
 
                     const pubKey = keyPair[0][1].publicKey;
                     const privKey = keyPair[0][1].privateKey;
 
-                    const recoveryKey = new RecoveryKey(credId, pubKey, privKey, sign, authData)
+                    const recoveryKey = new RecoveryKey(backupKeyId, pubKey, privKey, sign, bdData)
 
                     recoveryKeys.push(recoveryKey);
                 }
@@ -158,15 +168,19 @@ export class PSK {
             });
     }
 
-    public static async authenticatorMakeCredentialExtensionOutput(): Promise<[string, Uint8Array]> {
-        const backupKey = await BackupKey.popBackupKey();
-        return [backupKey.credentialId, base64ToByteArray(backupKey.bdAttObj, true)];
+    public static async authenticatorMakeCredentialExtensionOutput(): Promise<Uint8Array[]> {
+        const backupKeys = await BackupKey.popBackupKeys();
+        const raw_backup_keys = Array<Uint8Array>();
+        for (let i = 0; i < backupKeys.length; i++) {
+            raw_backup_keys.push(base64ToByteArray(backupKeys[i].bdAttObj, true));
+        }
+        return raw_backup_keys;
     }
 
-    public static async authenticatorGetCredentialExtensionOutput(oldCredentialId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, Uint8Array]> {
+    public static async authenticatorGetCredentialExtensionOutput(oldBackupKeyId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, Uint8Array]> {
         log.debug('authenticatorGetCredentialExtensionOutput called');
         // Find recovery key for given credential id
-        const recKey = await RecoveryKey.findRecoveryKey(oldCredentialId);
+        const recKey = await RecoveryKey.findRecoveryKey(oldBackupKeyId);
         if (recKey == null) {
             throw new Error("No recovery key found, but recovery was detected");
         }
@@ -182,9 +196,9 @@ export class PSK {
         log.debug('Attestation object', byteArrayToBase64(rawAttObj, true));
 
         // Finally remove recovery key since PSK output was generated successfully
-        await RecoveryKey.removeRecoveryKey(oldCredentialId);
+        await RecoveryKey.removeRecoveryKey(oldBackupKeyId);
 
-        const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldCredentialId: oldCredentialId, delegationSignature: recKey.delegationSignature, bdAuthData: recKey.bdAuthData}
+        const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldBackupKeyId: oldBackupKeyId, delegationSignature: recKey.delegationSignature, bdData: recKey.bdData}
         const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
         return [credentialId, cborRecMsg]
     }

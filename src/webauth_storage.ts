@@ -1,8 +1,7 @@
 import {base64ToByteArray, byteArrayToBase64, concatenate} from "./utils";
 import {
-    AUTH_ALIAS,
-    BACKUP_KEY,
-    BD_ENDPOINT, DEFAULT_AUTH_ALIAS,
+    BACKUP_KEY, BD,
+    BD_ENDPOINT,
     DEFAULT_BD_ENDPOINT, ES256,
     ivLength,
     keyExportFormat,
@@ -51,18 +50,64 @@ export class PSKStorage {
         });
     }
 
-    public static async storeBackupKeys(backupKeys: BackupKey[], override: boolean = false): Promise<void> {
-        log.debug(`Storing backup keys`);
+    public static async storeBD(bdUUID: string): Promise<void> {
+        log.debug('Store BD');
+        let bds = await this.loadBDs();
+        if (bds.includes(bdUUID)) {
+            return;
+        } else {
+            bds = bds.concat(bdUUID);
+            const exportJSON = JSON.stringify(bds);
+            return new Promise<void>(async (res, rej) => {
+                chrome.storage.local.set({[BD]: exportJSON}, () => {
+                    if (!!chrome.runtime.lastError) {
+                        log.error('Could not perform PSKStorage.storeBD', chrome.runtime.lastError.message);
+                        rej(chrome.runtime.lastError);
+                        return;
+                    } else {
+                        res();
+                    }
+                });
+            });
+        }
+
+    }
+
+    public static async loadBDs(): Promise<Array<string>> {
+        log.debug(`Loading BDs`);
+        return new Promise<Array<string>>(async (res, rej) => {
+            chrome.storage.local.get({[BD]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.loadBDs', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                }
+
+                if (resp[BD] == null) {
+                    log.warn(`No BDs found`);
+                    res([]);
+                    return;
+                }
+
+                const bds = await JSON.parse(resp[BD]);
+                log.debug('Loaded BDs successfully');
+                res(bds);
+            });
+        });
+    }
+
+    public static async storeBackupKeys(backupKeys: BackupKey[], bdUUID: string, override: boolean = false): Promise<void> {
+        log.debug(`Storing backup keys for`, bdUUID);
         const backupKeysExists = await this.existBackupKeys();
         if (backupKeysExists && !override) {
             log.debug('Backup keys already exist. Update entry.');
-            const entries = await this.loadBackupKeys();
+            const entries = await this.loadBackupKeys(bdUUID);
             backupKeys = entries.concat(backupKeys);
         }
 
         let exportJSON = JSON.stringify(backupKeys);
         return new Promise<void>(async (res, rej) => {
-            chrome.storage.local.set({[BACKUP_KEY]: exportJSON}, () => {
+            chrome.storage.local.set({[BACKUP_KEY + '_' + bdUUID]: exportJSON}, () => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.storeBackupKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
@@ -74,23 +119,23 @@ export class PSKStorage {
         });
     };
 
-    public static async loadBackupKeys(): Promise<BackupKey[]> {
+    public static async loadBackupKeys(bdUUID: string): Promise<BackupKey[]> {
         log.debug(`Loading backup keys`);
         return new Promise<BackupKey[]>(async (res, rej) => {
-            chrome.storage.local.get({[BACKUP_KEY]: null}, async (resp) => {
+            chrome.storage.local.get({[BACKUP_KEY + '_' + bdUUID]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.loadBackupKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
                     return;
                 }
 
-                if (resp[BACKUP_KEY] == null) {
+                if (resp[BACKUP_KEY + '_' + bdUUID] == null) {
                     log.warn(`No backup keys found`);
                     res([]);
                     return;
                 }
 
-                const backupKeys = await JSON.parse(resp[BACKUP_KEY]);
+                const backupKeys = await JSON.parse(resp[BACKUP_KEY + '_' + bdUUID]);
                 log.debug('Loaded backup keys successfully');
                 res(backupKeys);
             });
@@ -114,6 +159,8 @@ export class PSKStorage {
     public static async storeRecoveryKeys(recoveryKeys: RecoveryKey[]): Promise<void> {
         log.debug('Storing recovery keys');
 
+        recoveryKeys = recoveryKeys.concat(await this.loadRecoveryKeys());
+
         // Export recoveryKeys
         const exportKeys = []
         for (let i = 0; i < recoveryKeys.length; i++) {
@@ -122,11 +169,11 @@ export class PSKStorage {
             const expPubKey = await window.crypto.subtle.exportKey('jwk', recKey.pubKey);
 
             const json = {
-                credentialId: recKey.credentialId,
+                backupKeyId: recKey.backupKeyId,
                 pubKey: expPubKey,
                 privKey: expPrvKey,
                 delegationSignature: recKey.delegationSignature,
-                bdAuthData: recKey.bdAuthData,
+                bdData: recKey.bdData,
             }
 
             exportKeys.push(json)
@@ -146,9 +193,10 @@ export class PSKStorage {
         });
     }
 
-    public static async recoveryKeyExists(credId: string): Promise<boolean> {
-        const backupKeys = await PSKStorage.loadRecoveryKeys();
-        return backupKeys.filter(x => x.credentialId === credId).length > 0
+    public static async recoveryKeyExists(backupKeyId: string): Promise<boolean> {
+        log.debug('recoveryKeyExists: Requested backup key ID', backupKeyId);
+        const recoveryKeys = await PSKStorage.loadRecoveryKeys();
+        return recoveryKeys.filter(x => x.backupKeyId === backupKeyId).length > 0
     }
 
     public static async loadRecoveryKeys(): Promise<RecoveryKey[]> {
@@ -183,7 +231,7 @@ export class PSKStorage {
                         [],
                     );
 
-                    const recKey =  new RecoveryKey(json.credentialId, pubKey, prvKey, json.delegationSignature, json.bdAuthData);
+                    const recKey =  new RecoveryKey(json.backupKeyId, pubKey, prvKey, json.delegationSignature, json.bdData);
                     recKeys.push(recKey);
                 }
                 log.debug('Loaded recovery keys successfully', recKeys);

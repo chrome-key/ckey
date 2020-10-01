@@ -214,11 +214,8 @@ export class Authenticator {
                 if (pskInput !== true) {
                     log.warn('Make: PSK extension received unexpected input. Skip extension processing.', extensions[PSK_EXTENSION_IDENTIFIER]);
                 } else {
-                    const [backupKeyCredentialId, pskOutPut] = await PSK.authenticatorMakeCredentialExtensionOutput();
+                    const pskOutPut = await PSK.authenticatorMakeCredentialExtensionOutput();
                     processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutPut]]);
-                    credentialId = backupKeyCredentialId;
-                    credentialSource.id = credentialId;
-                    await CredentialsMap.put(rpId, credentialSource);
                     log.debug('Make: Processed PSK');
                 }
 
