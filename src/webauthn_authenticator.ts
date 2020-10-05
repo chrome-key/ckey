@@ -102,7 +102,7 @@ export class Authenticator {
                 }
                 const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
                 const pskInput = await CBOR.decode(new Buffer(rawPskInput));
-                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery[1], pskInput.hash, rpId);
+                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery[1], pskInput, rpId);
                 processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutput]]);
                 credSource = await CredentialsMap.lookup(rpId, newCredId);
                 if (credSource == null) {

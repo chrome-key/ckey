@@ -177,7 +177,7 @@ export class PSK {
         return raw_backup_keys;
     }
 
-    public static async authenticatorGetCredentialExtensionOutput(oldBackupKeyId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, Uint8Array]> {
+    public static async authenticatorGetCredentialExtensionOutput(oldBackupKeyId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, any]> {
         log.debug('authenticatorGetCredentialExtensionOutput called');
         // Find recovery key for given credential id
         const recKey = await RecoveryKey.findRecoveryKey(oldBackupKeyId);
@@ -199,7 +199,6 @@ export class PSK {
         await RecoveryKey.removeRecoveryKey(oldBackupKeyId);
 
         const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldBackupKeyId: oldBackupKeyId, delegationSignature: recKey.delegationSignature, bdData: recKey.bdData}
-        const cborRecMsg = new Uint8Array(CBOR.encodeCanonical(recoveryMessage));
-        return [credentialId, cborRecMsg]
+        return [credentialId, recoveryMessage]
     }
 }

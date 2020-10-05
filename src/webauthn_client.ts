@@ -134,9 +134,8 @@ export async function getPublicKeyCredential(origin: string, options: Credential
                 const customClientDataJSON = generateClientDataJSON(Create, options.publicKey.challenge as ArrayBuffer, origin);
                 const customClientDataHashDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(customClientDataJSON)));
                 const customClientDataHash = new Uint8Array(customClientDataHashDigest);
-                const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({hash: customClientDataHash}));
+                const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(customClientDataHash));
                 authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-                // clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: {clientDataJSON: customClientDataJSON}}; // ToDo  Add to response
             } else {
                 log.warn('PSK client extension processing failed. Wrong input.');
             }
