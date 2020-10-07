@@ -25,8 +25,7 @@ export class BackupKey {
         for (let i = 0; i < bds.length; i++) {
             const bdBackupKeys = await PSKStorage.loadBackupKeys(bds[i]);
             if (bdBackupKeys.length == 0) {
-                log.warn('No backup keys for ' + bds[i]);
-                continue;
+                throw new Error('No backup keys available for ' + bds[i]);
             }
             const backupKey = bdBackupKeys.pop();
             await PSKStorage.storeBackupKeys(bdBackupKeys, bds[i], true);
