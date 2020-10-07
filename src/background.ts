@@ -6,6 +6,7 @@ import {getOriginFromUrl, webauthnParse, webauthnStringify} from './utils';
 
 import {createPublicKeyCredential, getPublicKeyCredential} from "./webauthn_client";
 import {PSK} from "./webauthn_psk";
+import {PinStorage} from "./webauth_storage";
 
 const log = getLogger('background');
 
@@ -93,6 +94,18 @@ const pskOptions = async (alias, url) => {
     await PSK.setOptions(alias, url);
 };
 
+const authSetup = async () => {
+    let pin = await PinStorage.getPin().catch(_ => null);
+    if (pin != null) {
+        throw new Error("PIN already set");
+    }
+    pin = prompt("Please enter a PIN for the authenticator", "");
+    if (pin == null) {
+        throw new Error("Invalid PIN");
+    }
+    return await PinStorage.setPin(pin);
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
         case 'create_credential':
@@ -106,6 +119,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             break;
         case 'psk_options':
             pskOptions(msg.alias, msg.url).then(() => alert('PSK options was successfully!'),   e => log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e));
+            break;
+        case 'auth_setup':
+            authSetup().then(() => alert('Authenticator setup was successful.'), e => alert(e));
             break;
         case 'user_consent':
             const cb = userConsentCallbacks[msg.tabId];

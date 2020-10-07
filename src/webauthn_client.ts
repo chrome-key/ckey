@@ -53,26 +53,22 @@ export async function createPublicKeyCredential(origin: string, options: Credent
 
     // Handle only 1 authenticator
     // Step 20, simplified
+    let userVerification = true;
+    let residentKey = false;
     if (options.publicKey.authenticatorSelection) {
         if (options.publicKey.authenticatorSelection.authenticatorAttachment && (options.publicKey.authenticatorSelection.authenticatorAttachment !== 'platform')) {
             throw new Error(`${options.publicKey.authenticatorSelection.authenticatorAttachment} authenticator requested, but only platform authenticators available`);
         }
 
+        if (options.publicKey.authenticatorSelection.requireResidentKey) {
+            residentKey = options.publicKey.authenticatorSelection.requireResidentKey;
+        }
 
-        // Resident key check can be omitted, because cKey supports resident keys
-
-        if (options.publicKey.authenticatorSelection.userVerification && (options.publicKey.authenticatorSelection.userVerification === 'required')) {
-            throw new Error(`cKey does not support user verification`);
+        if (options.publicKey.authenticatorSelection.userVerification && (options.publicKey.authenticatorSelection.userVerification === 'discouraged')) {
+            userVerification = false;
         }
     }
 
-
-    let userVerification = false;
-    let residentKey = false;
-    if (options.publicKey.authenticatorSelection) {
-        userVerification = options.publicKey.authenticatorSelection.requireUserVerification === "required";
-        residentKey = options.publicKey.authenticatorSelection.requireResidentKey;
-    }
     const userPresence = !userVerification;
 
     const excludeCredentialDescriptorList = options.publicKey.excludeCredentials // No filtering
@@ -151,11 +147,10 @@ export async function getPublicKeyCredential(origin: string, options: Credential
 
     // Handle only 1 authenticator
     // Step 18
-    if (options.publicKey.userVerification && (options.publicKey.userVerification === 'required')) {
-        throw new Error(`cKey does not support user verification`);
+    let userVerification = true;
+    if (options.publicKey.userVerification && (options.publicKey.userVerification === 'discouraged')) {
+        userVerification = false;
     }
-
-    const userVerification = options.publicKey.userVerification === "required";
     const userPresence = !userVerification;
 
     const allowCredentialDescriptorList = options.publicKey.allowCredentials; // No filtering

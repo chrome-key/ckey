@@ -1,21 +1,59 @@
-import {base64ToByteArray, byteArrayToBase64, concatenate} from "./utils";
+import {
+    base64ToByteArray,
+    byteArrayToBase64,
+    concatenate,
+} from "./utils";
 import {
     BACKUP_KEY, BD,
     BD_ENDPOINT,
     DEFAULT_BD_ENDPOINT, ES256,
     ivLength,
     keyExportFormat,
-    PIN,
     RECOVERY_KEY,
-    saltLength
+    saltLength,
+    PIN
 } from "./constants";
 import {getLogger} from "./logging";
 import {BackupKey, RecoveryKey} from "./webauthn_psk";
 
 const log = getLogger('auth_storage');
 
+export class PinStorage {
+    public static async getPin(): Promise<string> {
+        return new Promise<string>(async (res, rej) => {
+            chrome.storage.local.get({[PIN]: null}, async (resp) => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.getPin', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                }
+
+                if (resp[PIN] == null) {
+                    rej('No PIN available. Have you performed the setup for your authenticator?');
+                }
+                log.debug('Loaded PIN endpoint successfully');
+                res(resp[PIN]);
+            });
+        });
+    };
+
+    public static async setPin(pin: string): Promise<void> {
+        return new Promise<void>(async (res, rej) => {
+            chrome.storage.local.set({[PIN]: pin}, () => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.setPin', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                } else {
+                    res();
+                }
+            });
+        });
+    }
+}
+
 export class PSKStorage {
-    public static async getBDEndpoint(): Promise<string> {
+        public static async getBDEndpoint(): Promise<string> {
         return new Promise<string>(async (res, rej) => {
             chrome.storage.local.get({[BD_ENDPOINT]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
@@ -369,7 +407,7 @@ export class PublicKeyCredentialSource {
 
 async function exportKey(key: CryptoKey): Promise<string> {
     const salt = window.crypto.getRandomValues(new Uint8Array(saltLength));
-    const wrappingKey = await getWrappingKey(PIN, salt);
+    const wrappingKey = await getWrappingKey(await PinStorage.getPin(), salt);
     const iv = window.crypto.getRandomValues(new Uint8Array(ivLength));
     const wrapAlgorithm: AesGcmParams = {
         iv,
@@ -408,7 +446,7 @@ async function importKey(rawKey: string): Promise<CryptoKey> {
     offset += keyAlgorithmByteLength;
     const keyBytes = keyPayload.subarray(offset);
 
-    const wrappingKey = await getWrappingKey(PIN, salt);
+    const wrappingKey = await getWrappingKey(await PinStorage.getPin(), salt);
     const wrapAlgorithm: AesGcmParams = {
         iv,
         name: 'AES-GCM',

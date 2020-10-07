@@ -18,4 +18,11 @@ $(() => {
             url: $('#BackupDeviceUrl').val(),
         });
     });
+
+    $('#Setup').on('click', function(evt: Event) {
+        evt.preventDefault();
+        chrome.runtime.sendMessage({
+            type: 'auth_setup',
+        });
+    });
 });

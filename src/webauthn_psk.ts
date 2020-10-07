@@ -83,6 +83,11 @@ export class PSK {
     public static async sync(): Promise<void> {
         log.debug('Sync triggered');
 
+        const verified = await Authenticator.verifyUser("User verification for PSK sync required.");
+        if (!verified) {
+            throw new Error(`user verification failed for PSK sync`);
+        }
+
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
         return await axios.default.get(bdEndpoint  + '/sync', {timeout: BD_TIMEOUT})
@@ -189,7 +194,7 @@ export class PSK {
         keyPair.publicKey = recKey.pubKey;
         const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(true));
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-        const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, keyPair, authenticatorExtensions);
+        const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, false, keyPair, authenticatorExtensions);
 
         log.debug('Delegation signature', recKey.delegationSignature);
         log.debug('Attestation object', byteArrayToBase64(rawAttObj, true));

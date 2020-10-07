@@ -1,5 +1,5 @@
 import {ECDSA, ICOSECompatibleKey} from "./webauthn_crypto";
-import {CredentialsMap, PSKStorage, PublicKeyCredentialSource} from "./webauth_storage";
+import {CredentialsMap, PinStorage, PSKStorage, PublicKeyCredentialSource} from "./webauth_storage";
 import {base64ToByteArray, byteArrayToBase64, counterToBytes} from "./utils";
 import * as CBOR from 'cbor';
 import {createAttestationSignature, getAttestationCertificate} from "./webauthn_attestation";
@@ -92,6 +92,14 @@ export class Authenticator {
             throw new Error(`no user consent`);
         }
 
+        let uv = false;
+        if (requireUserVerification) {
+            uv = await this.verifyUser("The relying party requires user verification.");
+            if (!uv) {
+                throw new Error(`user verification failed`);
+            }
+        }
+
         // Step 8
         let processedExtensions = undefined;
         if (extensions) {
@@ -125,7 +133,7 @@ export class Authenticator {
 
         // Step 10
         const authenticatorData = await this.generateAuthenticatorData(rpId,
-            this.getSignatureCounter(), undefined, processedExtensions);
+            this.getSignatureCounter(), undefined, processedExtensions, uv);
 
         // Step 11
         const concatData = new Uint8Array(authenticatorData.length + hash.length);
@@ -178,22 +186,24 @@ export class Authenticator {
 
         // Step 4 Not needed, because cKey supports resident keys
 
-        // Step 5
-        if (requireUserVerification) {
-            throw new Error(`authenticator does not support user verification`);
-        }
-
-        // Step 6
+        // Step 5 + 6
         const userConsent = await userConsentCallback;
         if (!userConsent) {
             throw new Error(`no user consent`);
         }
-        userEntity.id
 
-        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, undefined, extensions, userEntity.id);
+        let uv = false;
+        if (requireUserVerification) {
+            uv = await this.verifyUser("The relying party requires user verification.");
+            if (!uv) {
+                throw new Error(`user verification failed`);
+            }
+        }
+
+        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, uv, undefined, extensions, userEntity.id);
     }
 
-    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>, userHandle?: BufferSource): Promise<[string, Uint8Array]> {
+    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, uv: boolean, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>, userHandle?: BufferSource): Promise<[string, Uint8Array]> {
         // Step 7
         if (!(keyPair)) {
             log.debug('No key pair provided, create new one.');
@@ -234,7 +244,7 @@ export class Authenticator {
         const attestedCredentialData = await this.generateAttestedCredentialData(rawCredentialId, keyPair);
 
         // Step 12
-        const authenticatorData = await this.generateAuthenticatorData(rpId, sigCnt, attestedCredentialData, processedExtensions);
+        const authenticatorData = await this.generateAuthenticatorData(rpId, sigCnt, attestedCredentialData, processedExtensions, uv);
 
         // Step 13
         const attObj = await this.generateAttestationObject(hash, authenticatorData);
@@ -272,7 +282,7 @@ export class Authenticator {
     }
 
     private static async generateAuthenticatorData(rpID: string, counter: number, attestedCredentialData?: Uint8Array,
-                                             extensionData?: Uint8Array): Promise<Uint8Array> {
+                                             extensionData?: Uint8Array, uv?: boolean): Promise<Uint8Array> {
         const rpIdDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpID));
         const rpIdHash = new Uint8Array(rpIdDigest);
         let authenticatorDataLength = rpIdHash.length + 1 + 4;
@@ -292,6 +302,9 @@ export class Authenticator {
 
         // 1 byte for flags
         authenticatorData[rpIdHash.length] = 1; // UP
+        if (uv) {
+           authenticatorData[rpIdHash.length] |= (1 << 2); // AT
+        }
         if (attestedCredentialData) {
             authenticatorData[rpIdHash.length] |= (1 << 6); // AT
         }
@@ -340,5 +353,11 @@ export class Authenticator {
             return (c=='x' ? r :(r&0x3|0x8)).toString(16);
         });
         return byteArrayToBase64(enc.encode(uuid), true);
+    }
+
+    public static  async verifyUser(message: string): Promise<boolean> {
+        const userPin = prompt(`${message}\nPlease enter your PIN.`, "");
+        const originPin = await PinStorage.getPin();
+        return userPin == originPin
     }
 }
