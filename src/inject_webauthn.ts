@@ -44,7 +44,7 @@ const log = getLogger('inject_webauthn');
     window.postMessage(getCredentialRequest, window.location.origin);
     const webauthnResponse = await cb;
     const credential = webauthnParse(webauthnResponse.resp.credential);
-    credential.getClientExtensionResults = () => ({}); // ToDo Return actual client extension result
+    credential.getClientExtensionResults = () => (webauthnResponse.resp.clientExtensionResults);
     credential.__proto__ = window['PublicKeyCredential'].prototype;
     return credential;
   };

@@ -92,12 +92,10 @@ export class Authenticator {
             throw new Error(`no user consent`);
         }
 
-        let uv = false;
-        if (requireUserVerification) {
-            uv = await this.verifyUser("The relying party requires user verification.");
-            if (!uv) {
-                throw new Error(`user verification failed`);
-            }
+        // USer verification is always performed, because PIN is needed to decrypt keys
+        let uv = await this.verifyUser("User verification is required.");
+        if (!uv) {
+            throw new Error(`user verification failed`);
         }
 
         // Step 8
@@ -192,12 +190,10 @@ export class Authenticator {
             throw new Error(`no user consent`);
         }
 
-        let uv = false;
-        if (requireUserVerification) {
-            uv = await this.verifyUser("The relying party requires user verification.");
-            if (!uv) {
-                throw new Error(`user verification failed`);
-            }
+        // USer verification is always performed, because PIN is needed to decrypt keys
+        let uv = await this.verifyUser("The relying party requires user verification.");
+        if (!uv) {
+            throw new Error(`user verification failed`);
         }
 
         return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, uv, undefined, extensions, userEntity.id);
@@ -356,8 +352,13 @@ export class Authenticator {
     }
 
     public static  async verifyUser(message: string): Promise<boolean> {
+        const bcrypt = require('bcryptjs');
+
         const userPin = prompt(`${message}\nPlease enter your PIN.`, "");
-        const originPin = await PinStorage.getPin();
-        return userPin == originPin
+        const pinHash = await PinStorage.getPinHash();
+        const match = bcrypt.compareSync(userPin, pinHash);
+
+        PinStorage.setSessionPIN(userPin);
+        return match
     }
 }

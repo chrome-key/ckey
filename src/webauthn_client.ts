@@ -91,7 +91,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     }
 
     return {
-        getClientExtensionResults: () => (clientExtensions), // ToDo Fix client extension output
+        getClientExtensionResults: () => (clientExtensions),
         id: credentialId,
         rawId: base64ToByteArray(credentialId, true),
         response: {

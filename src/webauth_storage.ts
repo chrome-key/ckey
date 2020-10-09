@@ -18,9 +18,16 @@ import {BackupKey, RecoveryKey} from "./webauthn_psk";
 
 const log = getLogger('auth_storage');
 
+export let SESSION_PIN = null
+
 export class PinStorage {
-    public static async getPin(): Promise<string> {
-        return new Promise<string>(async (res, rej) => {
+    private static saltRounds = 10;
+    public static setSessionPIN(pin: string) {
+        SESSION_PIN = pin;
+    }
+
+    public static async getPinHash(): Promise<Uint8Array> {
+        return new Promise<Uint8Array>(async (res, rej) => {
             chrome.storage.local.get({[PIN]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.getPin', chrome.runtime.lastError.message);
@@ -31,20 +38,24 @@ export class PinStorage {
                 if (resp[PIN] == null) {
                     rej('No PIN available. Have you performed the setup for your authenticator?');
                 }
-                log.debug('Loaded PIN endpoint successfully');
+                log.debug('Loaded PIN hash successfully');
                 res(resp[PIN]);
             });
         });
     };
 
     public static async setPin(pin: string): Promise<void> {
+        const bcrypt = require('bcryptjs');
+        let hash = bcrypt.hashSync(pin, this.saltRounds);
+
         return new Promise<void>(async (res, rej) => {
-            chrome.storage.local.set({[PIN]: pin}, () => {
+            chrome.storage.local.set({[PIN]: hash}, () => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.setPin', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
                     return;
                 } else {
+                    log.debug('Set PIN successfully');
                     res();
                 }
             });
@@ -407,7 +418,7 @@ export class PublicKeyCredentialSource {
 
 async function exportKey(key: CryptoKey): Promise<string> {
     const salt = window.crypto.getRandomValues(new Uint8Array(saltLength));
-    const wrappingKey = await getWrappingKey(await PinStorage.getPin(), salt);
+    const wrappingKey = await getWrappingKey(SESSION_PIN, salt);
     const iv = window.crypto.getRandomValues(new Uint8Array(ivLength));
     const wrapAlgorithm: AesGcmParams = {
         iv,
@@ -446,7 +457,7 @@ async function importKey(rawKey: string): Promise<CryptoKey> {
     offset += keyAlgorithmByteLength;
     const keyBytes = keyPayload.subarray(offset);
 
-    const wrappingKey = await getWrappingKey(await PinStorage.getPin(), salt);
+    const wrappingKey = await getWrappingKey(SESSION_PIN, salt);
     const wrapAlgorithm: AesGcmParams = {
         iv,
         name: 'AES-GCM',

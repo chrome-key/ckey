@@ -25,11 +25,12 @@ const requestUserConsent = async (tabId: number, origin: string): Promise<boolea
     });
     log.debug('setting popup for tab', tabId);
     const cb: Promise<boolean> = new Promise((res, _) => {
+        chrome.pageAction.setIcon({ tabId, path: enabledIcons });
+        chrome.pageAction.setPopup({ tabId, popup: 'popup.html' });
+        chrome.pageAction.show(tabId);
         userConsentCallbacks[tabId] = res;
     });
-    chrome.pageAction.setIcon({ tabId, path: enabledIcons });
-    chrome.pageAction.setPopup({ tabId, popup: 'popup.html' });
-    chrome.pageAction.show(tabId);
+
     const userConsent = await cb;
     chrome.storage.local.remove(tabKey);
     chrome.pageAction.setPopup({ tabId, popup: '' });
@@ -79,6 +80,7 @@ const getCredential = async (msg, sender: chrome.runtime.MessageSender) => {
         return {
             credential: webauthnStringify(credential),
             requestID: msg.requestID,
+            clientExtensionResults: credential.getClientExtensionResults(),
             type: 'get_credential_response',
         };
     } catch (e) {
@@ -95,7 +97,7 @@ const pskOptions = async (alias, url) => {
 };
 
 const authSetup = async () => {
-    let pin = await PinStorage.getPin().catch(_ => null);
+    let pin = await PinStorage.getPinHash().catch(_ => null);
     if (pin != null) {
         throw new Error("PIN already set");
     }
