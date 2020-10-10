@@ -198,11 +198,12 @@ export class PSK {
 
         log.debug('Delegation signature', recKey.delegationSignature);
         log.debug('Attestation object', byteArrayToBase64(rawAttObj, true));
+        log.debug('BDData', recKey.bdData);
 
         // Finally remove recovery key since PSK output was generated successfully
         await RecoveryKey.removeRecoveryKey(oldBackupKeyId);
 
-        const recoveryMessage = {attestationObject: byteArrayToBase64(rawAttObj, true), oldBackupKeyId: oldBackupKeyId, delegationSignature: recKey.delegationSignature, bdData: recKey.bdData}
+        const recoveryMessage = {attestationObject: rawAttObj, oldBackupKeyId: base64ToByteArray(oldBackupKeyId, true), delegationSignature: base64ToByteArray(recKey.delegationSignature, true), bdData: base64ToByteArray(recKey.bdData, true)}
         return [credentialId, recoveryMessage]
     }
 }
