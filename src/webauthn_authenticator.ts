@@ -35,7 +35,7 @@ export class Authenticator {
         return 0;
     }
 
-    public static async authenticatorGetAssertion(userConsentCallback: Promise<boolean>,
+    public static async authenticatorGetAssertion(userConsentCallback: () => Promise<boolean>,
                                                   rpId: string,
                                                   hash: Uint8Array,
                                                   requireUserPresence: boolean,
@@ -87,8 +87,8 @@ export class Authenticator {
             credSource = credentialOptions[0];
         }
 
-        const userConsent = await userConsentCallback;
-        if (!userConsent) {
+        const up = await userConsentCallback();
+        if (!up) {
             throw new Error(`no user consent`);
         }
 
@@ -131,7 +131,7 @@ export class Authenticator {
 
         // Step 10
         const authenticatorData = await this.generateAuthenticatorData(rpId,
-            this.getSignatureCounter(), undefined, processedExtensions, uv);
+            this.getSignatureCounter(), undefined, processedExtensions, up, uv);
 
         // Step 11
         const concatData = new Uint8Array(authenticatorData.length + hash.length);
@@ -144,7 +144,7 @@ export class Authenticator {
         return new AssertionResponse(credSource.id, authenticatorData, signature, credSource.userHandle);
     }
 
-    public static async authenticatorMakeCredential(userConsentCallback: Promise<boolean>,
+    public static async authenticatorMakeCredential(userConsentCallback: () => Promise<boolean>,
                                              hash: Uint8Array,
                                              rpEntity: PublicKeyCredentialRpEntity,
                                              userEntity: PublicKeyCredentialUserEntity,
@@ -185,21 +185,21 @@ export class Authenticator {
         // Step 4 Not needed, because cKey supports resident keys
 
         // Step 5 + 6
-        const userConsent = await userConsentCallback;
-        if (!userConsent) {
+        const up = await userConsentCallback(); // User presence always checked
+        if (!up) {
             throw new Error(`no user consent`);
         }
 
-        // USer verification is always performed, because PIN is needed to decrypt keys
+        // User verification is always performed, because PIN is needed to decrypt keys
         let uv = await this.verifyUser("The relying party requires user verification.");
         if (!uv) {
             throw new Error(`user verification failed`);
         }
 
-        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, uv, undefined, extensions, userEntity.id);
+        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, uv, up,undefined, extensions, userEntity.id);
     }
 
-    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, uv: boolean, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>, userHandle?: BufferSource): Promise<[string, Uint8Array]> {
+    public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, uv: boolean, up:boolean, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>, userHandle?: BufferSource): Promise<[string, Uint8Array]> {
         // Step 7
         if (!(keyPair)) {
             log.debug('No key pair provided, create new one.');
@@ -240,7 +240,7 @@ export class Authenticator {
         const attestedCredentialData = await this.generateAttestedCredentialData(rawCredentialId, keyPair);
 
         // Step 12
-        const authenticatorData = await this.generateAuthenticatorData(rpId, sigCnt, attestedCredentialData, processedExtensions, uv);
+        const authenticatorData = await this.generateAuthenticatorData(rpId, sigCnt, attestedCredentialData, processedExtensions, up, uv);
 
         // Step 13
         const attObj = await this.generateAttestationObject(hash, authenticatorData);
@@ -278,7 +278,7 @@ export class Authenticator {
     }
 
     private static async generateAuthenticatorData(rpID: string, counter: number, attestedCredentialData?: Uint8Array,
-                                             extensionData?: Uint8Array, uv?: boolean): Promise<Uint8Array> {
+                                             extensionData?: Uint8Array, up?: boolean, uv?: boolean): Promise<Uint8Array> {
         const rpIdDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpID));
         const rpIdHash = new Uint8Array(rpIdDigest);
         let authenticatorDataLength = rpIdHash.length + 1 + 4;
@@ -297,7 +297,9 @@ export class Authenticator {
         offset += rpIdHash.length;
 
         // 1 byte for flags
-        authenticatorData[rpIdHash.length] = 1; // UP
+        if (up) {
+            authenticatorData[rpIdHash.length] = 1; // UP
+        }
         if (uv) {
            authenticatorData[rpIdHash.length] |= (1 << 2); // AT
         }

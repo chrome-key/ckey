@@ -10,7 +10,7 @@ const Get: FunctionType = "webauthn.get";
 
 const log = getLogger('webauthn_client');
 
-export async function createPublicKeyCredential(origin: string, options: CredentialCreationOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>): Promise<PublicKeyCredential> {
+export async function createPublicKeyCredential(origin: string, options: CredentialCreationOptions, sameOriginWithAncestors: boolean, userConsentCallback: () => Promise<boolean>): Promise<PublicKeyCredential> {
     log.debug('Called createPublicKeyCredential');
 
     // Step 1
@@ -102,7 +102,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     } as PublicKeyCredential;
 }
 
-export async function getPublicKeyCredential(origin: string, options: CredentialRequestOptions, sameOriginWithAncestors: boolean, userConsentCallback: Promise<boolean>) {
+export async function getPublicKeyCredential(origin: string, options: CredentialRequestOptions, sameOriginWithAncestors: boolean, userConsentCallback: () => Promise<boolean>) {
     // Step 1
     if (!options.publicKey) {
         throw new Error('options missing');
@@ -166,7 +166,7 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     log.debug('Received assertion response');
 
     return {
-        getClientExtensionResults: () => (clientExtensions), // ToDo Add client extension output
+        getClientExtensionResults: () => (clientExtensions),
         id: assertionCreationData.credentialId,
         rawId: base64ToByteArray(assertionCreationData.credentialId, true),
         response: {

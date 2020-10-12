@@ -24,13 +24,14 @@ const requestUserConsent = async (tabId: number, origin: string): Promise<boolea
         }
     });
     log.debug('setting popup for tab', tabId);
+
     const cb: Promise<boolean> = new Promise((res, _) => {
-        chrome.pageAction.setIcon({ tabId, path: enabledIcons });
-        chrome.pageAction.setPopup({ tabId, popup: 'popup.html' });
-        chrome.pageAction.show(tabId);
         userConsentCallbacks[tabId] = res;
     });
 
+    chrome.pageAction.setIcon({ tabId, path: enabledIcons });
+    chrome.pageAction.setPopup({ tabId, popup: 'popup.html' });
+    chrome.pageAction.show(tabId);
     const userConsent = await cb;
     chrome.storage.local.remove(tabKey);
     chrome.pageAction.setPopup({ tabId, popup: '' });
@@ -46,7 +47,7 @@ const createCredential = async (msg, sender: chrome.runtime.MessageSender) => {
     }
     const opts = webauthnParse(msg.options);
     const origin = getOriginFromUrl(sender.url);
-    const userConsentCB = requestUserConsent(sender.tab.id, origin);
+    const userConsentCB = function() { return requestUserConsent(sender.tab.id, origin); }
 
     try {
         const credential = await createPublicKeyCredential(
@@ -73,7 +74,7 @@ const getCredential = async (msg, sender: chrome.runtime.MessageSender) => {
     }
     const opts = webauthnParse(msg.options);
     const origin = getOriginFromUrl(sender.url);
-    const userConsentCB = requestUserConsent(sender.tab.id, origin);
+    const userConsentCB = function() { return requestUserConsent(sender.tab.id, origin); }
 
     try {
         const credential = await getPublicKeyCredential(origin, opts, true, userConsentCB);

@@ -26,7 +26,5 @@ export const BACKUP_KEY = 'backup_key';
 export const BD_ENDPOINT = 'bd_endpoint';
 export const DEFAULT_BD_ENDPOINT = 'http://localhost:8005';
 export const RECOVERY_KEY = 'recovery_key';
-export const AUTH_ALIAS = 'auth_alias';
-export const DEFAULT_AUTH_ALIAS = 'MyAuth';
 export const BD_TIMEOUT = 60 * 1000 * 10; // 10 minutes
 export const BD = 'bd'
