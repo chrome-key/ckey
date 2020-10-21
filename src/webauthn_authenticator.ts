@@ -1,11 +1,11 @@
 import {ECDSA, ICOSECompatibleKey} from "./webauthn_crypto";
-import {CredentialsMap, PinStorage, PSKStorage, PublicKeyCredentialSource} from "./webauth_storage";
+import {CredentialsMap, PinStorage, PublicKeyCredentialSource} from "./webauth_storage";
 import {base64ToByteArray, byteArrayToBase64, counterToBytes} from "./utils";
 import * as CBOR from 'cbor';
 import {createAttestationSignature, getAttestationCertificate} from "./webauthn_attestation";
 import {getLogger} from "./logging";
 import {ES256_COSE, PSK_EXTENSION_IDENTIFIER} from "./constants";
-import {PSK} from "./webauthn_psk";
+import {PSK, RecoveryKey} from "./webauthn_psk";
 
 const log = getLogger('webauthn_authenticator');
 
@@ -47,7 +47,7 @@ export class Authenticator {
         log.debug('Called authenticatorGetAssertion');
 
         // Step 2-7 + recovery lookup
-        let isRecovery: [boolean, string] = [false, ""];
+        let isRecovery: RecoveryKey = null;
         let credentialOptions: PublicKeyCredentialSource[] = [];
         if (allowCredentialDescriptorList) {
             // Simplified credential lookup
@@ -69,21 +69,20 @@ export class Authenticator {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                const recExists = await PSKStorage.recoveryKeyExists(credId);
-                if (recExists) {
+                isRecovery = await RecoveryKey.findRecoveryKey(credId);
+                if (isRecovery != null) {
                     log.info('Recovery detected for', credId);
-                    isRecovery = [true, credId];
                     break;
                 }
             }
-            if (!isRecovery[0]) {
+            if (isRecovery == null) {
                 // No recovery and no associated credential found
                 throw new Error(`Container does not manage any related credentials`);
             }
         }
         // Note: The authenticator won't let the user select a public key credential source
         let credSource;
-        if (!isRecovery[0]) { // No recovery
+        if (isRecovery == null) { // No recovery
             credSource = credentialOptions[0];
         }
 
@@ -103,12 +102,12 @@ export class Authenticator {
         if (extensions) {
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
                 log.debug('Get: PSK requested');
-                if (!isRecovery[0]) {
+                if (isRecovery == null) {
                     throw new Error('PSK extension requested, but no matching recovery key available');
                 }
                 const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
                 const pskInput = await CBOR.decode(new Buffer(rawPskInput));
-                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery[1], pskInput, rpId);
+                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery, pskInput, rpId);
                 processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutput]]);
                 credSource = await CredentialsMap.lookup(rpId, newCredId);
                 if (credSource == null) {
@@ -116,10 +115,10 @@ export class Authenticator {
                     throw new Error('Get: New credential source missing');
                 }
                 log.debug('Get: Processed PSK');
-            } else if (isRecovery[0]) {
+            } else if (isRecovery != null) {
                 throw new Error('Recovery detected, but no PSK requested.')
             }
-        } else if (isRecovery[0]) {
+        } else if (isRecovery != null) {
             throw new Error('Recovery detected, but no PSK requested.')
         }
 
@@ -229,6 +228,7 @@ export class Authenticator {
         }
         if (processedExtensions) {
             processedExtensions =  new Uint8Array(CBOR.encodeCanonical(processedExtensions));
+            log.debug('CBOR extension', Buffer.from(processedExtensions).toString('hex'));
         }
 
 

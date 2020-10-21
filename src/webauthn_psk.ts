@@ -83,9 +83,9 @@ export class PSK {
     public static async sync(): Promise<void> {
         log.debug('Sync triggered');
 
-        const verified = await Authenticator.verifyUser("User verification for PSK sync required.");
+        const verified = await Authenticator.verifyUser("User verification for PSK setup flow required.");
         if (!verified) {
-            throw new Error(`user verification failed for PSK sync`);
+            throw new Error(`user verification failed for PSK setup flow`);
         }
 
         const bdEndpoint = await PSKStorage.getBDEndpoint();
@@ -181,29 +181,24 @@ export class PSK {
         return raw_backup_keys;
     }
 
-    public static async authenticatorGetCredentialExtensionOutput(oldBackupKeyId: string, customClientDataHash: Uint8Array, rpId: string): Promise<[string, any]> {
+    public static async authenticatorGetCredentialExtensionOutput(recoveryKey: RecoveryKey, customClientDataHash: Uint8Array, rpId: string): Promise<[string, any]> {
         log.debug('authenticatorGetCredentialExtensionOutput called');
-        // Find recovery key for given credential id
-        const recKey = await RecoveryKey.findRecoveryKey(oldBackupKeyId);
-        if (recKey == null) {
-            throw new Error("No recovery key found, but recovery was detected");
-        }
 
         // Create attestation object using the key pair of the recovery key + request PSK extension
-        const keyPair = await ECDSA.fromKey(recKey.privKey);
-        keyPair.publicKey = recKey.pubKey;
+        const keyPair = await ECDSA.fromKey(recoveryKey.privKey);
+        keyPair.publicKey = recoveryKey.pubKey;
         const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(true));
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, true, true, keyPair, authenticatorExtensions);
 
-        log.debug('Delegation signature', recKey.delegationSignature);
+        log.debug('Delegation signature', recoveryKey.delegationSignature);
         log.debug('Attestation object', byteArrayToBase64(rawAttObj, true));
-        log.debug('BDData', recKey.bdData);
+        log.debug('BDData', recoveryKey.bdData);
 
         // Finally remove recovery key since PSK output was generated successfully
-        await RecoveryKey.removeRecoveryKey(oldBackupKeyId);
+        await RecoveryKey.removeRecoveryKey(recoveryKey.backupKeyId);
 
-        const recoveryMessage = {attestationObject: rawAttObj, oldBackupKeyId: base64ToByteArray(oldBackupKeyId, true), delegationSignature: base64ToByteArray(recKey.delegationSignature, true), bdData: base64ToByteArray(recKey.bdData, true)}
+        const recoveryMessage = {attestationObject: rawAttObj, oldBackupKeyId: base64ToByteArray(recoveryKey.backupKeyId, true), delegationSignature: base64ToByteArray(recoveryKey.delegationSignature, true), bdData: base64ToByteArray(recoveryKey.bdData, true)}
         return [credentialId, recoveryMessage]
     }
 }

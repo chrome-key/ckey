@@ -7,7 +7,7 @@ $(() => {
     $('#Sync').on('click', function(evt: Event) {
         evt.preventDefault();
         chrome.runtime.sendMessage({
-            type: 'psk_sync',
+            type: 'psk_setup',
         });
     });
 
@@ -19,10 +19,10 @@ $(() => {
         });
     });
 
-    $('#Setup').on('click', function(evt: Event) {
+    $('#Pin').on('click', function(evt: Event) {
         evt.preventDefault();
         chrome.runtime.sendMessage({
-            type: 'auth_setup',
+            type: 'auth_pin_set',
         });
     });
 });

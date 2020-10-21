@@ -117,14 +117,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case 'get_credential':
             getCredential(msg, sender).then(sendResponse);
             break;
-        case 'psk_sync':
-            pskSync().then(() => alert('PSK sync was successfully!'), e => log.error('failed to sync psk', { errorType: `${(typeof e)}` }, e));
+        case 'psk_setup':
+            pskSync().then(() => alert('PSK setup flow was successful.'), e => log.error('PSK setup flow failed', { errorType: `${(typeof e)}` }, e));
             break;
         case 'psk_options':
-            pskOptions(msg.alias, msg.url).then(() => alert('PSK options was successfully!'),   e => log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e));
+            pskOptions(msg.alias, msg.url).then(() => alert('PSK options set successfully.'),   e => log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e));
             break;
-        case 'auth_setup':
-            authSetup().then(() => alert('Authenticator setup was successful.'), e => alert(e));
+        case 'auth_pin_set':
+            authSetup().then(() => alert('Authenticator PIN setup was successful.'), e => alert(e));
             break;
         case 'user_consent':
             const cb = userConsentCallbacks[msg.tabId];
