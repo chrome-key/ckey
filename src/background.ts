@@ -90,7 +90,7 @@ const getCredential = async (msg, sender: chrome.runtime.MessageSender) => {
 };
 
 const pskSync = async () => {
-    await PSK.sync();
+    await PSK.pskSetup();
 };
 
 const pskOptions = async (alias, url) => {

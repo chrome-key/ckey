@@ -124,17 +124,12 @@ export async function getPublicKeyCredential(origin: string, options: Credential
     if (options.publicKey.extensions) {
         const reqExt: any = options.publicKey.extensions;
         if (reqExt.hasOwnProperty(PSK_EXTENSION_IDENTIFIER)) {
-            log.debug('PSK extension requested');
-            if (reqExt[PSK_EXTENSION_IDENTIFIER] == true) {
-                log.debug('PSK extension has valid client input');
-                const customClientDataJSON = generateClientDataJSON(Create, options.publicKey.challenge as ArrayBuffer, origin);
-                const customClientDataHashDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(customClientDataJSON)));
-                const customClientDataHash = new Uint8Array(customClientDataHashDigest);
-                const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(customClientDataHash));
-                authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-            } else {
-                log.warn('PSK client extension processing failed. Wrong input.');
-            }
+            const userHandle = base64ToByteArray(reqExt[PSK_EXTENSION_IDENTIFIER], true);
+            const customClientDataJSON = generateClientDataJSON(Create, options.publicKey.challenge as ArrayBuffer, origin);
+            const customClientDataHashDigest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(customClientDataJSON)));
+            const customClientDataHash = new Uint8Array(customClientDataHashDigest);
+            const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({customClientDataHash: customClientDataHash, userHandle: userHandle}));
+            authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
         }
     }
 

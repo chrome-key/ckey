@@ -47,7 +47,7 @@ export class Authenticator {
         log.debug('Called authenticatorGetAssertion');
 
         // Step 2-7 + recovery lookup
-        let isRecovery: RecoveryKey = null;
+        let recKey: RecoveryKey = null;
         let credentialOptions: PublicKeyCredentialSource[] = [];
         if (allowCredentialDescriptorList) {
             // Simplified credential lookup
@@ -69,20 +69,20 @@ export class Authenticator {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                isRecovery = await RecoveryKey.findRecoveryKey(credId);
-                if (isRecovery != null) {
+                recKey = await RecoveryKey.findRecoveryKey(credId);
+                if (recKey != null) {
                     log.info('Recovery detected for', credId);
                     break;
                 }
             }
-            if (isRecovery == null) {
+            if (recKey == null) {
                 // No recovery and no associated credential found
                 throw new Error(`Container does not manage any related credentials`);
             }
         }
         // Note: The authenticator won't let the user select a public key credential source
         let credSource;
-        if (isRecovery == null) { // No recovery
+        if (recKey == null) { // No recovery
             credSource = credentialOptions[0];
         }
 
@@ -102,12 +102,26 @@ export class Authenticator {
         if (extensions) {
             if (extensions.has(PSK_EXTENSION_IDENTIFIER)) {
                 log.debug('Get: PSK requested');
-                if (isRecovery == null) {
+                if (recKey == null) {
                     throw new Error('PSK extension requested, but no matching recovery key available');
                 }
                 const rawPskInput = base64ToByteArray(extensions.get(PSK_EXTENSION_IDENTIFIER), true);
                 const pskInput = await CBOR.decode(new Buffer(rawPskInput));
-                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(isRecovery, pskInput, rpId);
+                if (!pskInput.hasOwnProperty('customClientDataHash')) {
+                    throw new Error("PSK extension input has no customClientDataHash");
+                }
+                const customClientDataHash = pskInput['customClientDataHash'];
+                if (!pskInput.hasOwnProperty('userHandle')) {
+                    throw new Error("PSK extension input has no userHandle");
+                }
+                const userHandle = new Uint8Array(pskInput['userHandle']).buffer;
+                if (Buffer.byteLength(pskInput.customClientDataHash) != 32) {
+                    throw new Error("PSK extension: customClientDataHash has invalid length")
+                }
+                if (userHandle.byteLength == 0) {
+                    throw new Error("PSK extension: user handle has invalid length")
+                }
+                const [newCredId, pskOutput] = await PSK.authenticatorGetCredentialExtensionOutput(recKey, customClientDataHash, userHandle, rpId);
                 processedExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, pskOutput]]);
                 credSource = await CredentialsMap.lookup(rpId, newCredId);
                 if (credSource == null) {
@@ -115,10 +129,10 @@ export class Authenticator {
                     throw new Error('Get: New credential source missing');
                 }
                 log.debug('Get: Processed PSK');
-            } else if (isRecovery != null) {
+            } else if (recKey != null) {
                 throw new Error('Recovery detected, but no PSK requested.')
             }
-        } else if (isRecovery != null) {
+        } else if (recKey != null) {
             throw new Error('Recovery detected, but no PSK requested.')
         }
 
@@ -360,7 +374,9 @@ export class Authenticator {
         const pinHash = await PinStorage.getPinHash();
         const match = bcrypt.compareSync(userPin, pinHash);
 
-        PinStorage.setSessionPIN(userPin);
+        if (match) {
+            PinStorage.setSessionPIN(userPin);
+        }
         return match
     }
 }

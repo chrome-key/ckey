@@ -80,8 +80,8 @@ export class PSK {
         return await PSKStorage.setBDEndpoint(url);
     }
 
-    public static async sync(): Promise<void> {
-        log.debug('Sync triggered');
+    public static async pskSetup(): Promise<void> {
+        log.debug('pskSetup triggered');
 
         const verified = await Authenticator.verifyUser("User verification for PSK setup flow required.");
         if (!verified) {
@@ -105,13 +105,13 @@ export class PSK {
                 await PSKStorage.storeBackupKeys(backupKeys, syncResponse.bdUUID);
 
                 if (syncResponse.hasOwnProperty("recoveryOption")) {
-                    await PSK.recoverySync(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
+                    await PSK.pskRecoverySetup(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
                 }
             });
     }
 
-    private static async recoverySync(delegatedAuthAlias: string, originAuthAlias: string, keyAmount: number): Promise<void> {
-        log.debug("Recovery setup triggered");
+    private static async pskRecoverySetup(delegatedAuthAlias: string, originAuthAlias: string, keyAmount: number): Promise<void> {
+        log.debug("pskRecoverySetup triggered");
 
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
@@ -181,7 +181,7 @@ export class PSK {
         return raw_backup_keys;
     }
 
-    public static async authenticatorGetCredentialExtensionOutput(recoveryKey: RecoveryKey, customClientDataHash: Uint8Array, rpId: string): Promise<[string, any]> {
+    public static async authenticatorGetCredentialExtensionOutput(recoveryKey: RecoveryKey, customClientDataHash: Uint8Array, userHandle: ArrayBuffer, rpId: string): Promise<[string, any]> {
         log.debug('authenticatorGetCredentialExtensionOutput called');
 
         // Create attestation object using the key pair of the recovery key + request PSK extension
@@ -189,7 +189,7 @@ export class PSK {
         keyPair.publicKey = recoveryKey.pubKey;
         const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(true));
         const authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
-        const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, true, true, keyPair, authenticatorExtensions);
+        const [credentialId, rawAttObj] = await Authenticator.finishAuthenticatorMakeCredential(rpId, customClientDataHash, true, true, keyPair, authenticatorExtensions, userHandle);
 
         log.debug('Delegation signature', recoveryKey.delegationSignature);
         log.debug('Attestation object', byteArrayToBase64(rawAttObj, true));
