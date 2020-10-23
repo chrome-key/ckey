@@ -41,6 +41,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
             log.info('PSK extension requested');
             const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical(true));
             authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
+            clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true};
         }
     }
 
@@ -130,6 +131,7 @@ export async function getPublicKeyCredential(origin: string, options: Credential
             const customClientDataHash = new Uint8Array(customClientDataHashDigest);
             const authenticatorExtensionInput = new Uint8Array(CBOR.encodeCanonical({customClientDataHash: customClientDataHash, userHandle: userHandle}));
             authenticatorExtensions = new Map([[PSK_EXTENSION_IDENTIFIER, byteArrayToBase64(authenticatorExtensionInput, true)]]);
+            clientExtensions = {[PSK_EXTENSION_IDENTIFIER]: true};
         }
     }
 
