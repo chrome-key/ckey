@@ -1,7 +1,7 @@
 import * as axios from 'axios';
 import * as CBOR from 'cbor';
 
-import {PSKStorage} from "./webauth_storage";
+import {PinStorage, PSKStorage} from "./webauth_storage";
 import {getLogger} from "./logging";
 import {base64ToByteArray, byteArrayToBase64} from "./utils";
 import {ECDSA} from "./webauthn_crypto";
@@ -56,8 +56,8 @@ export class RecoveryKey {
         this.bdData = bdData;
     }
 
-    static async findRecoveryKey(backupKeyId: string): Promise<RecoveryKey|null> {
-        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.backupKeyId === backupKeyId);
+    static async findRecoveryKey(backupKeyId: string, importPrvKey: boolean = true): Promise<RecoveryKey|null> {
+        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys(importPrvKey)).filter(x => x.backupKeyId === backupKeyId);
         if (recoveryKeys.length == 0) {
             return null
         }
@@ -107,6 +107,7 @@ export class PSK {
                 if (syncResponse.hasOwnProperty("recoveryOption")) {
                     await PSK.pskRecoverySetup(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
                 }
+                PinStorage.resetSessionPIN();
             });
     }
 

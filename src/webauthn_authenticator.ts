@@ -54,14 +54,14 @@ export class Authenticator {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                const cred = await CredentialsMap.lookup(rpId, credId);
+                const cred = await CredentialsMap.lookup(rpId, credId, false);
                 if (cred != null) {
                     credentialOptions.push(cred);
                 }
             }
         } else {
             // If no credentials were supplied, load all credentials associated to the RPID
-            credentialOptions = credentialOptions.concat(await CredentialsMap.load(rpId));
+            credentialOptions = credentialOptions.concat(await CredentialsMap.load(rpId, false));
         }
         if (credentialOptions.length == 0) {
             // Check if there is any recovery key that matches the provided credential descriptors
@@ -69,7 +69,8 @@ export class Authenticator {
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                recKey = await RecoveryKey.findRecoveryKey(credId);
+                // lookup without private key import, because PIN not available yet
+                recKey = await RecoveryKey.findRecoveryKey(credId, false);
                 if (recKey != null) {
                     log.info('Recovery detected for', credId);
                     break;
@@ -80,21 +81,26 @@ export class Authenticator {
                 throw new Error(`Container does not manage any related credentials`);
             }
         }
-        // Note: The authenticator won't let the user select a public key credential source
-        let credSource;
-        if (recKey == null) { // No recovery
-            credSource = credentialOptions[0];
-        }
 
         const up = await userConsentCallback();
         if (!up) {
             throw new Error(`no user consent`);
         }
 
-        // USer verification is always performed, because PIN is needed to decrypt keys
+        // User verification is always performed, because PIN is needed to decrypt keys
         let uv = await this.verifyUser("User verification is required.");
         if (!uv) {
             throw new Error(`user verification failed`);
+        }
+
+        // Note: The authenticator won't let the user select a public key credential source
+        let credSource;
+        if (recKey == null) { // No recovery
+            // Load cred source again, now with private key, because UV provided PIN
+            credSource = await CredentialsMap.lookup(rpId, credentialOptions[0].id, true);
+        } else {
+            // Load recovery key again, now with private key, because UV provided PIn
+            recKey = await RecoveryKey.findRecoveryKey(recKey.backupKeyId, true)
         }
 
         // Step 8
@@ -153,6 +159,8 @@ export class Authenticator {
         const prvKey = await ECDSA.fromKey(credSource.privateKey);
         const signature = await prvKey.sign(concatData);
 
+        PinStorage.resetSessionPIN();
+
         // Step 13
         return new AssertionResponse(credSource.id, authenticatorData, signature, credSource.userHandle);
     }
@@ -183,13 +191,14 @@ export class Authenticator {
 
         // Step 3
         if (excludeCredentialDescriptorList) { // Simplified look up
-            const credMapEntries = await CredentialsMap.load(rpEntity.id);
+            // Load without key import, because PIN is not available yet
+            const credMapEntries = await CredentialsMap.load(rpEntity.id, false);
             for (let i = 0; i < excludeCredentialDescriptorList.length; i++) {
                 const rawCredId = excludeCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
                 if (credMapEntries.findIndex(x =>
                     (x.id == credId) && (x.type === excludeCredentialDescriptorList[i].type)) >= 0) {
-                    await userConsentCallback;
+                    await userConsentCallback();
                     throw new Error(`authenticator manages credential of excludeCredentialDescriptorList`);
                 }
             }
@@ -209,7 +218,11 @@ export class Authenticator {
             throw new Error(`user verification failed`);
         }
 
-        return await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, uv, up,undefined, extensions, userEntity.id);
+        const credential =  await this.finishAuthenticatorMakeCredential(rpEntity.id, hash, uv, up,undefined, extensions, userEntity.id);
+
+        PinStorage.resetSessionPIN();
+
+        return credential;
     }
 
     public static async finishAuthenticatorMakeCredential(rpId: string, hash: Uint8Array, uv: boolean, up:boolean, keyPair?: ICOSECompatibleKey, extensions?: Map<string, string>, userHandle?: BufferSource): Promise<[string, Uint8Array]> {
@@ -259,7 +272,6 @@ export class Authenticator {
         // Step 13
         const attObj = await this.generateAttestationObject(hash, authenticatorData);
 
-        // Return value is not 1:1 WebAuthn conform
         log.debug('Created credential', credentialId)
         return [credentialId, attObj];
     }
@@ -376,6 +388,8 @@ export class Authenticator {
 
         if (match) {
             PinStorage.setSessionPIN(userPin);
+        } else {
+            alert("PIN does not match!");
         }
         return match
     }

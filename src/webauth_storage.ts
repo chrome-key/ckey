@@ -26,6 +26,17 @@ export class PinStorage {
         SESSION_PIN = pin;
     }
 
+    public static resetSessionPIN(): void {
+        this.setSessionPIN(null);
+    }
+
+    public static getSessionPin(): string {
+        if (SESSION_PIN == null) {
+            throw new Error("No session PIN available");
+        }
+        return SESSION_PIN;
+    }
+
     public static async getPinHash(): Promise<Uint8Array> {
         return new Promise<Uint8Array>(async (res, rej) => {
             chrome.storage.local.get({[PIN]: null}, async (resp) => {
@@ -248,7 +259,7 @@ export class PSKStorage {
         return recoveryKeys.filter(x => x.backupKeyId === backupKeyId).length > 0
     }
 
-    public static async loadRecoveryKeys(): Promise<RecoveryKey[]> {
+    public static async loadRecoveryKeys(privateKeyImport: boolean = true): Promise<RecoveryKey[]> {
         log.debug(`Loading recovery keys`);
         return new Promise<RecoveryKey[]>(async (res, rej) => {
             chrome.storage.local.get({[RECOVERY_KEY]: null}, async (resp) => {
@@ -268,7 +279,7 @@ export class PSKStorage {
                 const recKeys = new Array<RecoveryKey>();
                 for (let i = 0; i < exportJSON.length; ++i) {
                     const json = exportJSON[i];
-                    const prvKey = await importKey(json.privKey);
+                    const prvKey = privateKeyImport ? await importKey(json.privKey) : null;
                     const pubKey = await window.crypto.subtle.importKey(
                         'jwk',
                         json.pubKey,
@@ -293,7 +304,7 @@ export class PSKStorage {
 export class CredentialsMap {
     public static async put(rpId: string, credSrc: PublicKeyCredentialSource): Promise<void> {
         log.debug(`Storing credential map entry for ${rpId}`);
-        const mapEntryExists = await this.exists(rpId);
+        const mapEntryExists = await this.rpEntryExists(rpId);
         let credSrcs: PublicKeyCredentialSource[];
         if (mapEntryExists) {
             log.debug('Credential map entry does already exist. Update entry.');
@@ -325,7 +336,9 @@ export class CredentialsMap {
         });
     }
 
-    public static async load(rpId: string): Promise<PublicKeyCredentialSource[]> {
+
+
+    public static async load(rpId: string, keyImport: boolean = true): Promise<PublicKeyCredentialSource[]> {
         log.debug(`Loading credential map entry for ${rpId}`);
         return new Promise<PublicKeyCredentialSource[]>(async (res, rej) => {
             chrome.storage.local.get({[rpId]: null}, async (resp) => {
@@ -343,7 +356,7 @@ export class CredentialsMap {
                 const exportJSON = await JSON.parse(resp[rpId]);
                 const credSrcs = new Array<PublicKeyCredentialSource>();
                 for (let i = 0; i < exportJSON.length; ++i) {
-                    const credSrc =  await PublicKeyCredentialSource.import(exportJSON[i]);
+                    const credSrc =  await PublicKeyCredentialSource.import(exportJSON[i], keyImport);
                     credSrcs.push(credSrc);
                 }
                 log.debug('Loaded credential map entry successfully');
@@ -352,17 +365,17 @@ export class CredentialsMap {
         });
     }
 
-    public static async lookup(rpId: string, credSrcId: string): Promise<PublicKeyCredentialSource | null> {
-        const credSrcs = await this.load(rpId);
+    public static async lookup(rpId: string, credSrcId: string, keyImport: boolean = true): Promise<PublicKeyCredentialSource | null> {
+        const credSrcs = await this.load(rpId, keyImport);
         const res = credSrcs.filter(x => x.id == credSrcId);
         if (res.length == 0) {
             return null;
         } else {
             return res[0];
         }
-    }
+    };
 
-    public static async exists(rpId: string): Promise<boolean> {
+    public static async rpEntryExists(rpId: string): Promise<boolean> {
         return new Promise<boolean>(async (res, rej) => {
             chrome.storage.local.get({[rpId]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
@@ -378,11 +391,11 @@ export class CredentialsMap {
 }
 
 export class PublicKeyCredentialSource {
-    public static async import(json: any): Promise<PublicKeyCredentialSource> {
+    public static async import(json: any, keyImport: boolean = true): Promise<PublicKeyCredentialSource> {
         const _id = json.id;
         const _rpId = json.rpId;
         const _userHandle = json.userHandle;
-        const _privateKey = await importKey(json.privateKey);
+        const _privateKey = keyImport? await importKey(json.privateKey) : null;
 
         return new PublicKeyCredentialSource(_id, _privateKey, _rpId, _userHandle);
     }
@@ -418,7 +431,7 @@ export class PublicKeyCredentialSource {
 
 async function exportKey(key: CryptoKey): Promise<string> {
     const salt = window.crypto.getRandomValues(new Uint8Array(saltLength));
-    const wrappingKey = await getWrappingKey(SESSION_PIN, salt);
+    const wrappingKey = await getWrappingKey(PinStorage.getSessionPin(), salt);
     const iv = window.crypto.getRandomValues(new Uint8Array(ivLength));
     const wrapAlgorithm: AesGcmParams = {
         iv,
@@ -457,7 +470,7 @@ async function importKey(rawKey: string): Promise<CryptoKey> {
     offset += keyAlgorithmByteLength;
     const keyBytes = keyPayload.subarray(offset);
 
-    const wrappingKey = await getWrappingKey(SESSION_PIN, salt);
+    const wrappingKey = await getWrappingKey(PinStorage.getSessionPin(), salt);
     const wrapAlgorithm: AesGcmParams = {
         iv,
         name: 'AES-GCM',
