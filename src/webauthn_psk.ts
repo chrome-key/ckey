@@ -90,7 +90,7 @@ export class PSK {
 
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
-        return await axios.default.get(bdEndpoint  + '/sync', {timeout: BD_TIMEOUT})
+        return await axios.default.get(bdEndpoint  + '/setup', {timeout: BD_TIMEOUT})
             .then(async function(response) {
                 log.debug(response);
                 const syncResponse = response.data;
@@ -135,7 +135,7 @@ export class PSK {
 
         let attCert = byteArrayToBase64(getAttestationCertificate(), true);
 
-        return await axios.default.post(bdEndpoint + '/recovery', {
+        return await axios.default.post(bdEndpoint + '/setup', {
             replacementKeys,
             attCert,
             delegatedAuthAlias,
