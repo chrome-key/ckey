@@ -22,10 +22,6 @@ export async function createPublicKeyCredential(origin: string, options: Credent
         throw new Error('Client does not support none attestation');
     }
 
-    if (options.publicKey.authenticatorSelection.authenticatorAttachment === 'cross-platform') {
-        throw new Error('Client does not support cross-platform authenticators');
-    }
-
     // Step 2
     if (!sameOriginWithAncestors) {
         throw new Error(`sameOriginWithAncestors has to be true`);
@@ -65,7 +61,7 @@ export async function createPublicKeyCredential(origin: string, options: Credent
     let userVerification = true;
     let residentKey = false;
     if (options.publicKey.authenticatorSelection) {
-        if (options.publicKey.authenticatorSelection.authenticatorAttachment && (options.publicKey.authenticatorSelection.authenticatorAttachment !== 'platform')) {
+        if ((options.publicKey.authenticatorSelection.authenticatorAttachment != undefined) && (options.publicKey.authenticatorSelection.authenticatorAttachment !== 'platform')) {
             throw new Error(`${options.publicKey.authenticatorSelection.authenticatorAttachment} authenticator requested, but only platform authenticators available`);
         }
 
