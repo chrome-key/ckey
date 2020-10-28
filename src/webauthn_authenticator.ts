@@ -66,17 +66,17 @@ export class Authenticator {
         if (credentialOptions.length == 0) {
             // Check if there is any recovery key that matches the provided credential descriptors
             log.debug('No directly managed credentials found');
+            const backupKeyIds = [];
             for (let i = 0; i < allowCredentialDescriptorList.length; i++) {
                 const rawCredId = allowCredentialDescriptorList[i].id as ArrayBuffer;
                 const credId = byteArrayToBase64(new Uint8Array(rawCredId), true);
-                // lookup without private key import, because PIN not available yet
-                recKey = await RecoveryKey.findRecoveryKey(credId, false);
-                if (recKey != null) {
-                    log.info('Recovery detected for', credId);
-                    break;
-                }
+                backupKeyIds.push(credId);
             }
-            if (recKey == null) {
+            // lookup without private key import, because PIN not available yet
+            recKey = await RecoveryKey.findRecoveryKey(backupKeyIds, false);
+            if (recKey != null) {
+                log.info('Recovery detected for backup key', recKey.backupKeyId);
+            } else {
                 // No recovery and no associated credential found
                 throw new Error(`Container does not manage any related credentials`);
             }
@@ -99,8 +99,8 @@ export class Authenticator {
             // Load cred source again, now with private key, because UV provided PIN
             credSource = await CredentialsMap.lookup(rpId, credentialOptions[0].id, true);
         } else {
-            // Load recovery key again, now with private key, because UV provided PIn
-            recKey = await RecoveryKey.findRecoveryKey(recKey.backupKeyId, true)
+            // Load recovery key again, now with private key, because UV provided PIN
+            recKey = await RecoveryKey.findRecoveryKey([recKey.backupKeyId], true)
         }
 
         // Step 8

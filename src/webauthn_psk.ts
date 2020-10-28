@@ -56,8 +56,8 @@ export class RecoveryKey {
         this.bdData = bdData;
     }
 
-    static async findRecoveryKey(backupKeyId: string, importPrvKey: boolean = true): Promise<RecoveryKey|null> {
-        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys(importPrvKey)).filter(x => x.backupKeyId === backupKeyId);
+    static async findRecoveryKey(backupKeyIds: string[], importPrvKey: boolean = true): Promise<RecoveryKey|null> {
+        const recoveryKeys =  await PSKStorage.loadRecoveryKeys(backupKeyIds, importPrvKey);
         if (recoveryKeys.length == 0) {
             return null
         }
@@ -65,9 +65,8 @@ export class RecoveryKey {
         return recoveryKeys[0];
     }
 
-    static async removeRecoveryKey(backupKeyId: string): Promise<void> {
-        const recoveryKeys =  (await PSKStorage.loadRecoveryKeys()).filter(x => x.backupKeyId !== backupKeyId);
-        return await PSKStorage.storeRecoveryKeys(recoveryKeys);
+    static async removeRecoveryKey(recKey: RecoveryKey): Promise<void> {
+        return await PSKStorage.removeRecoveryKey(recKey);
     }
 }
 
@@ -195,7 +194,7 @@ export class PSK {
         log.debug('BDData', recoveryKey.bdData);
 
         // Finally remove recovery key since PSK output was generated successfully
-        await RecoveryKey.removeRecoveryKey(recoveryKey.backupKeyId);
+        await RecoveryKey.removeRecoveryKey(recoveryKey);
 
         const recoveryMessage = {attestationObject: rawAttObj, oldBackupKeyId: base64ToByteArray(recoveryKey.backupKeyId, true), delegationSignature: base64ToByteArray(recoveryKey.delegationSignature, true), bdData: base64ToByteArray(recoveryKey.bdData, true)}
         return [credentialId, recoveryMessage]

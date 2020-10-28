@@ -216,13 +216,25 @@ export class PSKStorage {
         });
     };
 
+    public static async removeRecoveryKey(recoveryKey: RecoveryKey): Promise<void> {
+        return new Promise<void>(async (res, rej) => {
+            chrome.storage.local.remove([RECOVERY_KEY + "_" + recoveryKey.backupKeyId], () => {
+                if (!!chrome.runtime.lastError) {
+                    log.error('Could not perform PSKStorage.removeRecoveryKey', chrome.runtime.lastError.message);
+                    rej(chrome.runtime.lastError);
+                    return;
+                } else {
+                    res();
+                }
+            });
+        })
+    }
+
     public static async storeRecoveryKeys(recoveryKeys: RecoveryKey[]): Promise<void> {
         log.debug('Storing recovery keys');
 
-        recoveryKeys = recoveryKeys.concat(await this.loadRecoveryKeys());
-
         // Export recoveryKeys
-        const exportKeys = []
+        const exportKeys = new Map();
         for (let i = 0; i < recoveryKeys.length; i++) {
             const recKey = recoveryKeys[i];
             const expPrvKey = await exportKey(recKey.privKey);
@@ -236,12 +248,12 @@ export class PSKStorage {
                 bdData: recKey.bdData,
             }
 
-            exportKeys.push(json)
+            exportKeys.set(RECOVERY_KEY + "_" + recKey.backupKeyId, JSON.stringify(json))
         }
 
-        let exportJSON = JSON.stringify(exportKeys);
+        let storageObject = Object.fromEntries(exportKeys);
         return new Promise<void>(async (res, rej) => {
-            chrome.storage.local.set({[RECOVERY_KEY]: exportJSON}, () => {
+            chrome.storage.local.set(storageObject, () => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.storeRecoveryKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
@@ -255,30 +267,34 @@ export class PSKStorage {
 
     public static async recoveryKeyExists(backupKeyId: string): Promise<boolean> {
         log.debug('recoveryKeyExists: Requested backup key ID', backupKeyId);
-        const recoveryKeys = await PSKStorage.loadRecoveryKeys();
+        const recoveryKeys = await PSKStorage.loadRecoveryKeys([backupKeyId]);
         return recoveryKeys.filter(x => x.backupKeyId === backupKeyId).length > 0
     }
 
-    public static async loadRecoveryKeys(privateKeyImport: boolean = true): Promise<RecoveryKey[]> {
+    public static async loadRecoveryKeys(backupKeyIds: string[], privateKeyImport: boolean = true): Promise<RecoveryKey[]> {
         log.debug(`Loading recovery keys`);
+        const storageEntries = new Map<string, any>();
+        for (let i = 0; i < backupKeyIds.length; i++) {
+            storageEntries.set(RECOVERY_KEY + "_" + backupKeyIds[i], null);
+        }
+        let storageObject = Object.fromEntries(storageEntries);
         return new Promise<RecoveryKey[]>(async (res, rej) => {
-            chrome.storage.local.get({[RECOVERY_KEY]: null}, async (resp) => {
+            chrome.storage.local.get(storageObject, async (resp) => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.loadRecoveryKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
                     return;
                 }
 
-                if (resp[RECOVERY_KEY] == null) {
-                    log.warn(`No recovery keys found`);
-                    res([]);
-                    return;
-                }
-
-                const exportJSON = await JSON.parse(resp[RECOVERY_KEY]);
                 const recKeys = new Array<RecoveryKey>();
-                for (let i = 0; i < exportJSON.length; ++i) {
-                    const json = exportJSON[i];
+                const storageKeys = Array.from(storageEntries.keys());
+                for (let i = 0; i < storageKeys.length; i++) {
+                    const storageKey = storageKeys[i];
+                    if (resp[storageKey] == null) {
+                        continue;
+                    }
+
+                    const json =await JSON.parse(resp[storageKey]);
                     const prvKey = privateKeyImport ? await importKey(json.privKey) : null;
                     const pubKey = await window.crypto.subtle.importKey(
                         'jwk',
