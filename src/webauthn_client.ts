@@ -18,6 +18,14 @@ export async function createPublicKeyCredential(origin: string, options: Credent
         throw new Error('options missing');
     }
 
+    if (options.publicKey.attestation === 'none') { // Currently only direct and indirect attestation is supported
+        throw new Error('Client does not support none attestation');
+    }
+
+    if (options.publicKey.authenticatorSelection.authenticatorAttachment === 'cross-platform') {
+        throw new Error('Client does not support cross-platform authenticators');
+    }
+
     // Step 2
     if (!sameOriginWithAncestors) {
         throw new Error(`sameOriginWithAncestors has to be true`);
@@ -86,10 +94,6 @@ export async function createPublicKeyCredential(origin: string, options: Credent
         authenticatorExtensions);
 
     log.debug('Received attestation object');
-
-    if (options.publicKey.attestation === 'none') { // Currently only direct and indirect attestation is supported
-        throw new Error('Client does not support none attestation');
-    }
 
     return {
         getClientExtensionResults: () => (clientExtensions),

@@ -115,7 +115,7 @@ export class PSK {
 
         const bdEndpoint = await PSKStorage.getBDEndpoint();
 
-        let rawRecKeys = new Array<[string, CryptoKeyPair]>()
+        let rawRecKeys = new Map<string, CryptoKeyPair>()
         let replacementKeys = []
         for (let i = 0; i < keyAmount; i++) {
             const keyPair = await window.crypto.subtle.generateKey(
@@ -123,7 +123,7 @@ export class PSK {
                 true,
                 ['sign'],
             );
-            rawRecKeys.push([i.toString(), keyPair]);
+            rawRecKeys.set(i.toString(), keyPair);
 
             // Prepare delegation request
             const pubKey = await ECDSA.fromKey(keyPair.publicKey);
@@ -151,14 +151,14 @@ export class PSK {
                     const replacementKeyId = rawDelegations[i].replacementKeyId;
                     const bdData = rawDelegations[i].bdData;
 
-                    const keyPair = rawRecKeys.filter((x, _) => x[0] == replacementKeyId);
-                    if (keyPair.length !== 1) {
+                    const keyPair = rawRecKeys.get(replacementKeyId)
+                    if (!keyPair) {
                         log.warn('BD response does not contain delegation for key pair', replacementKeyId);
                         continue;
                     }
 
-                    const pubKey = keyPair[0][1].publicKey;
-                    const privKey = keyPair[0][1].privateKey;
+                    const pubKey = keyPair.publicKey;
+                    const privKey = keyPair.privateKey;
 
                     const recoveryKey = new RecoveryKey(backupKeyId, pubKey, privKey, sign, bdData)
 
