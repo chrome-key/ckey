@@ -152,8 +152,6 @@ export class PSK {
                     const replacementKeyId = rawDelegations[i].replacementKeyId;
                     const bdData = rawDelegations[i].bdData;
 
-                    log.debug(rawDelegations[i]);
-
                     const keyPair = rawRecKeys.filter((x, _) => x[0] == replacementKeyId);
                     if (keyPair.length !== 1) {
                         log.warn('BD response does not contain delegation for key pair', replacementKeyId);

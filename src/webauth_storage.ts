@@ -158,7 +158,7 @@ export class PSKStorage {
 
     public static async storeBackupKeys(backupKeys: BackupKey[], bdUUID: string, override: boolean = false): Promise<void> {
         log.debug(`Storing backup keys for`, bdUUID);
-        const backupKeysExists = await this.existBackupKeys();
+        const backupKeysExists = await this.existBackupKeys(bdUUID);
         if (backupKeysExists && !override) {
             log.debug('Backup keys already exist. Update entry.');
             const entries = await this.loadBackupKeys(bdUUID);
@@ -202,15 +202,15 @@ export class PSKStorage {
         });
     }
 
-    private static async existBackupKeys(): Promise<boolean> {
+    private static async existBackupKeys(bdUUID: string): Promise<boolean> {
         return new Promise<boolean>(async (res, rej) => {
-            chrome.storage.local.get({[BACKUP_KEY]: null}, async (resp) => {
+            chrome.storage.local.get({[BACKUP_KEY + '_' + bdUUID]: null}, async (resp) => {
                 if (!!chrome.runtime.lastError) {
                     log.error('Could not perform PSKStorage.existBackupKeys', chrome.runtime.lastError.message);
                     rej(chrome.runtime.lastError);
                     return;
                 } else {
-                    res(!(resp[BACKUP_KEY] == null));
+                    res(!(resp[BACKUP_KEY + '_' + bdUUID] == null));
                 }
             });
         });
