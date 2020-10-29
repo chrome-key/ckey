@@ -107,6 +107,9 @@ export class PSK {
                     await PSK.pskRecoverySetup(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
                 }
                 PinStorage.resetSessionPIN();
+            }).catch(e => {
+                alert('PSK Initial Setup Failed!');
+                log.error(e);
             });
     }
 
@@ -165,8 +168,11 @@ export class PSK {
                     recoveryKeys.push(recoveryKey);
                 }
 
-                log.debug('Recovery finished. Recovery keys:', recoveryKeys);
+                log.debug('Recovery Setup finished. Recovery keys:', recoveryKeys);
                 await PSKStorage.storeRecoveryKeys(recoveryKeys);
+            }).catch(e => {
+                alert('PSK Recovery Setup Failed!');
+                log.error(e);
             });
     }
 
