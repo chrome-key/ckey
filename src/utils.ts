@@ -3,7 +3,6 @@ export function webauthnStringify(o) {
   return JSON.stringify(o, (k, v) => {
     if (v) {
       if (v.constructor.name === 'ArrayBuffer') {
-        // Because Buffer.from(ArrayBuffer) was not working on firefox
         v = new Uint8Array(v);
       }
       if (v.constructor.name === 'Uint8Array') {
@@ -16,6 +15,7 @@ export function webauthnStringify(o) {
     return v;
   });
 }
+
 export function webauthnParse(j) {
   return JSON.parse(j, (k, v) => {
     if (v && v.kr_ser_ty === 'Uint8Array') {
@@ -38,6 +38,30 @@ export function concatenate(...arrays: Uint8Array[]) {
   }
   return result;
 }
+
+export function counterToBytes(c: number): Uint8Array {
+  const bytes = new Uint8Array(4);
+  // Sadly, JS TypedArrays are whatever-endian the platform is,
+  // so Uint32Array is not at all useful here (or anywhere?),
+  // and we must manually pack the counter (big endian as per spec).
+  bytes[0] = 0xFF & c >>> 24;
+  bytes[1] = 0xFF & c >>> 16;
+  bytes[2] = 0xFF & c >>> 8;
+  bytes[3] = 0xFF & c;
+  return bytes;
+}
+
+/*export function pemToArrayBuffer(pem) {
+  var b64Lines = removeLines(pem);
+  var b64Prefix = b64Lines.replace('-----BEGIN PRIVATE KEY-----', '');
+  var b64Final = b64Prefix.replace('-----END PRIVATE KEY-----', '');
+
+  return base64ToArrayBuffer(b64Final);
+}
+
+function removeLines(str) {
+  return str.replace("\n", "");
+}*/
 
 // Copyright 2014 Google Inc. All rights reserved
 //
@@ -69,9 +93,8 @@ export function byteArrayToBase64(arr: Uint8Array, urlEncoded: boolean = false):
   const result = btoa(String.fromCharCode(...arr));
   if (urlEncoded) {
     return result.replace(/=/g, '')
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=/g, "");
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
   }
   return result;
 }
@@ -80,14 +103,13 @@ export function base64ToByteArray(str: string, urlEncoded: boolean = false): Uin
   let rawInput = str;
   if (urlEncoded) {
     rawInput = padString(rawInput)
-        .replace(/-/g, '+')
-        .replace(/_/g, '/')
-        .replace(/=/g, "");
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/');
   }
   return Uint8Array.from(atob(rawInput), (c) => c.charCodeAt(0));
 }
 
-function padString(input: string): string {
+export function padString(input: string): string {
   let result = input;
   while (result.length % 4) {
     result += '=';

@@ -23,3 +23,8 @@ $ npm run watch
 # Loading into the browser
 
 You can load the project as an unpacked extension. Upon building, you may load the directory `dist/chromium/` into your browser. More details on how to do this [here](https://developer.chrome.com/extensions/getstarted).
+
+# PSK Protocol Support
+
+- Support for PSK WebAuthn Extension
+- Support for PSK Setup API

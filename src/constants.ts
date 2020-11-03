@@ -15,3 +15,16 @@ export const enabledIcons = {
     48: 'images/lock_enabled-48.png',
     128: 'images/lock_enabled-128.png',
 };
+
+export const ES256_COSE = -7;
+export const ES256 = 'P-256';
+export const SHA256_COSE = 1;
+
+export const PIN = 'pin';
+export const PSK_EXTENSION_IDENTIFIER = 'psk';
+export const BACKUP_KEY = 'backup_key';
+export const BD_ENDPOINT = 'bd_endpoint';
+export const DEFAULT_BD_ENDPOINT = 'http://localhost:8005';
+export const RECOVERY_KEY = 'recovery_key';
+export const BD_TIMEOUT = 60 * 1000 * 10; // 10 minutes
+export const BD = 'bd'
