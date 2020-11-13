@@ -118,7 +118,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             getCredential(msg, sender).then(sendResponse);
             break;
         case 'psk_setup':
-            pskSync().then(() => alert('PSK setup flow was successful.'), e => log.error('PSK setup flow failed', { errorType: `${(typeof e)}` }, e));
+            pskSync().then(() => {}, e => log.error('PSK setup flow failed', { errorType: `${(typeof e)}` }, e));
             break;
         case 'psk_options':
             pskOptions(msg.alias, msg.url).then(() => alert('PSK options set successfully.'),   e => log.error('failed to set psk options', { errorType: `${(typeof e)}` }, e));

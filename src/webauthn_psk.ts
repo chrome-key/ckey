@@ -106,11 +106,11 @@ export class PSK {
                 if (syncResponse.hasOwnProperty("recoveryOption")) {
                     await PSK.pskRecoverySetup(syncResponse.authAlias, syncResponse.recoveryOption.originAuthAlias, syncResponse.recoveryOption.keyAmount);
                 }
-                PinStorage.resetSessionPIN();
+                alert('PSK setup flow was successful.')
             }).catch(e => {
                 alert('PSK Initial Setup Failed!');
                 log.error(e);
-            });
+            }).finally(() =>   PinStorage.resetSessionPIN());
     }
 
     private static async pskRecoverySetup(delegatedAuthAlias: string, originAuthAlias: string, keyAmount: number): Promise<void> {
