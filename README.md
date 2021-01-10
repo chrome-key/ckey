@@ -28,3 +28,9 @@ You can load the project as an unpacked extension. Upon building, you may load t
 
 - Support for PSK WebAuthn Extension
 - Support for PSK Setup API
+
+# OS Support
+
+The extension was tested with Ubuntu 18.04 and macOS 10.15.7
+
+Windows 10 does not use the default Chrome popup to search for available authenticators, but uses a Windows Security popup that unfortunately disables the Chrome window until a certain timeout. Once the timeout is reached and the Chrome browser window becomes active again, you can interact the cKey extension.
