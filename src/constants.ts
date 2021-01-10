@@ -21,7 +21,7 @@ export const ES256 = 'P-256';
 export const SHA256_COSE = 1;
 
 export const PIN = 'pin';
-export const PSK_EXTENSION_IDENTIFIER = 'psk';
+export const PSK_EXTENSION_IDENTIFIER = 'PSK';
 export const BACKUP_KEY = 'backup_key';
 export const BD_ENDPOINT = 'bd_endpoint';
 export const DEFAULT_BD_ENDPOINT = 'http://localhost:8005';
