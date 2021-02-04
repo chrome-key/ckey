@@ -2,13 +2,14 @@
   "manifest_version": 2,
   "name": "CKey",
   "description": "A Chrome Extension that emulates a Hardware Authentication Device",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "minimum_chrome_version": "36.0.1985.18",
   "content_scripts": [
     {
       "all_frames": true,
       "matches": [
-        "https://*/*"
+        "https://*/*",
+        "http://localhost/*"
       ],
       "exclude_matches": [
         "https://*/*.xml"
@@ -26,7 +27,12 @@
       "js/background.js"
     ]
   },
-  "content_security_policy": "script-src 'self' 'unsafe-eval'; object-src 'self'",
+  "options_page": "options.html",
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
+  "content_security_policy": "script-src 'self' https://code.jquery.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://stackpath.bootstrapcdn.com 'unsafe-eval'; object-src 'self'",
   "page_action": {
     "default_icon": {
       "16": "images/lock-16.png",
