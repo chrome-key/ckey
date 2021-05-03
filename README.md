@@ -1,3 +1,5 @@
+**OBSOLETE! This project has become obsolete with new improvements brought by Chrome 87. Chrome DevTools now provide a similar feature to what this project aimed at providing. See https://developer.chrome.com/blog/new-in-devtools-87/#webauthn**
+
 # Chrome Key
 
 This is a Chrome Extension that emulates a hardware authentication device, allowing you to register with Webauthn-compatible websites without requiring an actual physical device.
